@@ -4,6 +4,20 @@ import (
 	"net/http"
 )
 
+// Handle panic errors to prevent server shutdown
+func (s *Server) panicMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				s.deps.Log.Info("internal.server.middlewares.panicMiddleware", "error", err)
+				http.Error(w, "Internal server error", 500)
+			}
+		}()
+		// There will be a defer with panic handler in each next function
+		next.ServeHTTP(w, r)
+	})
+}
+
 // CORS middleware
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

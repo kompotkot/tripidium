@@ -37,6 +37,7 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("/user", h.User)
 
 	commonHandler := s.corsMiddleware(mux)
+	commonHandler = s.panicMiddleware(commonHandler)
 
 	return &commonHandler
 }
