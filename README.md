@@ -2,6 +2,8 @@
 
 A lightweight template REST API server with authorization and basic functionality built in Go.
 
+![logo](img/logo.png)
+
 ## Environment Variables
 
 The application uses the following environment variables for configuration:
