@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,8 +25,8 @@ func NewHandlers(deps Dependencies) Handlers {
 }
 
 type UserResponse struct {
-	Id        string    `json:"id"`
-	Email     string    `json:"email"`
+	Id        int64     `json:"id"`
+	Username  string    `json:"username"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -46,9 +47,15 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authHeader := r.Header.Get("Authorization")
-	tokenId := strings.TrimPrefix(authHeader, "Bearer ")
-	if tokenId == "" {
+	tokenIdStr := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenIdStr == "" {
 		http.Error(w, "Token is required", http.StatusUnauthorized)
+		return
+	}
+
+	tokenId, err := strconv.ParseInt(tokenIdStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid token format", http.StatusBadRequest)
 		return
 	}
 
@@ -70,7 +77,7 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 
 	response := UserResponse{
 		Id:        user.Id,
-		Email:     user.Email,
+		Username:  user.Username,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}

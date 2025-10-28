@@ -15,8 +15,8 @@ type Database interface {
 	Close() error
 
 	// GetUser retrieves a user from the database
-	GetUser(ctx context.Context, userId, email string) (iam.User, error)
+	GetUser(ctx context.Context, userId int64, email string) (iam.User, error)
 
 	// GetToken retrieves a token from the database
-	GetToken(ctx context.Context, tokenId string) (iam.Token, error)
+	GetToken(ctx context.Context, tokenId int64) (iam.Token, error)
 }
