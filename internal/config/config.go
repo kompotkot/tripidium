@@ -18,7 +18,7 @@ const (
 
 	DefaultDatabaseType            = "sqlite"
 	DefaultDatabaseSqliteURI       = "tripidium.sqlite"
-	DefaultDatabasePsqlURI         = "postgres://postgres:postgres@localhost:5432/postgres"
+	DefaultDatabasePsqlURI         = "postgres://postgres:postgres@localhost:5432/tripidium"
 	DefaultDatabaseMaxConns        = 10
 	DefaultDatabaseConnMaxLifetime = 30 * time.Second
 
@@ -50,7 +50,7 @@ func Load() (*types.Config, error) {
 	databaseURIEnv := os.Getenv("DATABASE_URI")
 	if databaseURIEnv == "" {
 		switch databaseTypeEnv {
-		case "postgresql":
+		case "psql":
 			databaseURIEnv = DefaultDatabasePsqlURI
 		case "sqlite":
 			databaseURIEnv = DefaultDatabaseSqliteURI
