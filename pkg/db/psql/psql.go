@@ -1,4 +1,7 @@
-package db
+//go:build psql
+
+package psql
+
 
 import (
 	"context"
@@ -6,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kompotkot/tripidium/pkg/iam"
+	db "github.com/kompotkot/tripidium/pkg/db"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -74,7 +78,7 @@ func (p *PsqlDB) GetUser(ctx context.Context, userId int64, email string) (iam.U
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return iam.User{}, ErrUserNotFound
+		return iam.User{}, db.ErrUserNotFound
 	}
 	if err != nil {
 		return iam.User{}, err
@@ -96,7 +100,7 @@ func (p *PsqlDB) GetToken(ctx context.Context, tokenId int64) (iam.Token, error)
 		&token.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return iam.Token{}, ErrTokenNotFound
+		return iam.Token{}, db.ErrTokenNotFound
 	}
 	if err != nil {
 		return iam.Token{}, err

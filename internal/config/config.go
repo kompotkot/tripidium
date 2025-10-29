@@ -16,7 +16,9 @@ const (
 	DefaultLoggerLevel  = "info"
 	DefaultLoggerFormat = "text"
 
-	DefaultDatabaseURI             = "postgres://postgres:postgres@localhost:5432/postgres"
+	DefaultDatabaseType            = "sqlite"
+	DefaultDatabaseSqliteURI       = "tripidium.sqlite"
+	DefaultDatabasePsqlURI         = "postgres://postgres:postgres@localhost:5432/postgres"
 	DefaultDatabaseMaxConns        = 10
 	DefaultDatabaseConnMaxLifetime = 30 * time.Second
 
@@ -40,9 +42,21 @@ func Load() (*types.Config, error) {
 		logFormatEnv = DefaultLoggerFormat
 	}
 
+	databaseTypeEnv := os.Getenv("DATABASE_TYPE")
+	if databaseTypeEnv == "" {
+		databaseTypeEnv = DefaultDatabaseType
+	}
+
 	databaseURIEnv := os.Getenv("DATABASE_URI")
 	if databaseURIEnv == "" {
-		databaseURIEnv = DefaultDatabaseURI
+		switch databaseTypeEnv {
+		case "postgresql":
+			databaseURIEnv = DefaultDatabasePsqlURI
+		case "sqlite":
+			databaseURIEnv = DefaultDatabaseSqliteURI
+		default:
+			return nil, fmt.Errorf("invalid database type: %s", databaseTypeEnv)
+		}
 	}
 
 	var databaseMaxConns int
@@ -111,6 +125,7 @@ func Load() (*types.Config, error) {
 			Format: logFormatEnv,
 		},
 		Database: types.DatabaseConfig{
+			Type:            databaseTypeEnv,
 			URI:             databaseURIEnv,
 			MaxConns:        databaseMaxConns,
 			ConnMaxLifetime: databaseConnMaxLifetime,

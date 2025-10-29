@@ -10,6 +10,7 @@ type LoggerConfig struct {
 
 // Database configuration
 type DatabaseConfig struct {
+	Type            string
 	URI             string
 	MaxConns        int
 	ConnMaxLifetime time.Duration

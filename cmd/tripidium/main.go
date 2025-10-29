@@ -29,7 +29,12 @@ func main() {
 
 	// Initialize database connection using registry
 	log.Info("Initializing database connection")
-	database, err := db.NewPsqlDB(cfg.Database.URI, cfg.Database.MaxConns, cfg.Database.ConnMaxLifetime)
+	database, err := db.CreateDatabase(
+		cfg.Database.Type,
+		cfg.Database.URI,
+		cfg.Database.MaxConns,
+		int64(cfg.Database.ConnMaxLifetime),
+	)
 	if err != nil {
 		log.Error("Failed to initialize database connection", "error", err)
 		os.Exit(1)
