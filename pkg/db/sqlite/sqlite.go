@@ -90,6 +90,10 @@ func (s *SqliteDB) Close() error {
 	return nil
 }
 
+func (p *SqliteDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
+	return iam.User{}, nil
+}
+
 func (p *SqliteDB) GetUser(ctx context.Context, userId int64, email string) (iam.User, error) {
 	return iam.User{}, nil
 }

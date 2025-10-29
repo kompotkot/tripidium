@@ -14,6 +14,9 @@ type Database interface {
 	// Close closes the database connection
 	Close() error
 
+	// CreateUser creates new user in database
+	CreateUser(ctx context.Context, username string, passwordHash string) (iam.User, error)
+
 	// GetUser retrieves a user from the database
 	GetUser(ctx context.Context, userId int64, email string) (iam.User, error)
 

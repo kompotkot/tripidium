@@ -9,6 +9,7 @@ replace github.com/kompotkot/tripidium/pkg/db/sqlite => ./pkg/db/sqlite
 require (
 	github.com/kompotkot/tripidium/pkg/db/psql v0.0.0-00010101000000-000000000000
 	github.com/kompotkot/tripidium/pkg/db/sqlite v0.0.0-00010101000000-000000000000
+	golang.org/x/crypto v0.37.0
 )
 
 require (
@@ -17,7 +18,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.6 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 )

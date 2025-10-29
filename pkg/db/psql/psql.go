@@ -49,6 +49,10 @@ func (p *PsqlDB) Close() error {
 	return nil
 }
 
+func (p *PsqlDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
+	return iam.User{}, nil
+}
+
 // GetUser retrieves user from the database by it's Id or Email
 func (p *PsqlDB) GetUser(ctx context.Context, userId int64, email string) (iam.User, error) {
 	var user iam.User

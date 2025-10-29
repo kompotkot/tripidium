@@ -34,6 +34,7 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 
 	// Register routes
 	mux.HandleFunc("/ping", h.Ping)
+	mux.HandleFunc("/signup", h.SignUp)
 	mux.HandleFunc("/user", h.User)
 
 	commonHandler := s.corsMiddleware(mux)
