@@ -1,6 +1,6 @@
-# Tripidium
+# tripidium
 
-A lightweight REST API server template with authentication and basic functionality built in Go.
+A lightweight REST API server template with authentication basic functionality built in Go.
 
 ![logo](img/logo.png)
 
