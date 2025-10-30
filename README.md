@@ -9,7 +9,7 @@ A lightweight REST API server template with authentication basic functionality b
 Build the application:
 
 ```bash
-go build -o tripidium ./cmd/tripidium
+go build -tags sqlite -o tripidium ./cmd/tripidium
 ```
 
 Run the server:
