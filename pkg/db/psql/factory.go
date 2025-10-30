@@ -23,5 +23,5 @@ func (f *Factory) Create(uri string, maxConns int, connMaxLifetime int64) (db.Da
 
 // GetType returns the database type
 func (f *Factory) GetType() string {
-	return "postgresql"
+	return "psql"
 }
