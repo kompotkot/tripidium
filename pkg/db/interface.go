@@ -18,8 +18,8 @@ type Database interface {
 	CreateUser(ctx context.Context, username string, passwordHash string) (iam.User, error)
 
 	// GetUser retrieves a user from the database
-	GetUser(ctx context.Context, userId int64, email string) (iam.User, error)
+	GetUser(ctx context.Context, userId, username string) (iam.User, error)
 
 	// GetToken retrieves a token from the database
-	GetToken(ctx context.Context, tokenId int64) (iam.Token, error)
+	GetToken(ctx context.Context, tokenId string) (iam.Token, error)
 }

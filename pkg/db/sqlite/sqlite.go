@@ -94,10 +94,10 @@ func (p *SqliteDB) CreateUser(ctx context.Context, username, passwordHash string
 	return iam.User{}, nil
 }
 
-func (p *SqliteDB) GetUser(ctx context.Context, userId int64, email string) (iam.User, error) {
+func (p *SqliteDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
 	return iam.User{}, nil
 }
 
-func (p *SqliteDB) GetToken(ctx context.Context, tokenId int64) (iam.Token, error) {
+func (p *SqliteDB) GetToken(ctx context.Context, tokenId string) (iam.Token, error) {
 	return iam.Token{}, nil
 }

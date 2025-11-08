@@ -2,16 +2,18 @@
 
 package psql
 
-
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
-	"github.com/kompotkot/tripidium/pkg/iam"
 	db "github.com/kompotkot/tripidium/pkg/db"
+	"github.com/kompotkot/tripidium/pkg/iam"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -50,63 +52,88 @@ func (p *PsqlDB) Close() error {
 }
 
 func (p *PsqlDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
-	return iam.User{}, nil
-}
+	const query = `
+		INSERT INTO users (username, password_hash) 
+		VALUES ($1, $2) 
+		RETURNING id, username, password_hash, created_at, updated_at
+	`
 
-// GetUser retrieves user from the database by it's Id or Email
-func (p *PsqlDB) GetUser(ctx context.Context, userId int64, email string) (iam.User, error) {
 	var user iam.User
-	var err error
-
-	if userId != 0 {
-		query := `SELECT id, username, password_hash, created_at, updated_at FROM users WHERE id = $1`
-
-		err = p.pool.QueryRow(ctx, query, userId).Scan(
-			&user.Id,
-			&user.Username,
-			&user.PasswordHash,
-			&user.CreatedAt,
-			&user.UpdatedAt,
-		)
-	}
-	if email != "" {
-		query := `SELECT id, username, password_hash, created_at, updated_at FROM users WHERE username = $1`
-
-		err = p.pool.QueryRow(ctx, query, email).Scan(
-			&user.Id,
-			&user.Username,
-			&user.PasswordHash,
-			&user.CreatedAt,
-			&user.UpdatedAt,
-		)
-	}
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return iam.User{}, db.ErrUserNotFound
-	}
+	err := p.pool.QueryRow(ctx, query, username, passwordHash).Scan(
+		&user.Id,
+		&user.Username,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.User{}, db.ErrUnexpectedEmptyReturn
+		}
+
+		// Handle the username uniqueness error
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23505" { // unique_violation
+				return iam.User{}, db.ErrUserAlreadyExists
+			}
+		}
+
 		return iam.User{}, err
 	}
 
 	return user, nil
 }
 
-func (p *PsqlDB) GetToken(ctx context.Context, tokenId int64) (iam.Token, error) {
+// GetUser retrieves user from the database by it's Id or Username
+func (p *PsqlDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
+	var sb strings.Builder
+	args := make([]interface{}, 0, 2)
+
+	sb.WriteString(`SELECT id, username, password_hash, created_at, updated_at FROM users `)
+
+	sep := " WHERE "
+	if userId != "" {
+		sb.WriteString(sep)
+		args = append(args, userId)
+		sb.WriteString(fmt.Sprintf("id = $%d", len(args)))
+		sep = " AND "
+	}
+	if username != "" {
+		sb.WriteString(sep)
+		args = append(args, username)
+		sb.WriteString(fmt.Sprintf("username = $%d", len(args)))
+	}
+
+	query := sb.String()
+
+	var user iam.User
+	err := p.pool.QueryRow(ctx, query, args...).Scan(
+		&user.Id, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.User{}, db.ErrUserNotFound
+		}
+
+		return iam.User{}, err
+	}
+
+	return user, nil
+}
+
+func (p *PsqlDB) GetToken(ctx context.Context, tokenId string) (iam.Token, error) {
 	query := `SELECT id, user_id, is_revoked, issued_at, expires_at, updated_at FROM tokens WHERE id = $1`
 
 	var token iam.Token
 	err := p.pool.QueryRow(ctx, query, tokenId).Scan(
-		&token.Id,
-		&token.UserId,
-		&token.IsRevoked,
-		&token.IssuedAt,
-		&token.ExpiresAt,
-		&token.UpdatedAt,
+		&token.Id, &token.UserId, &token.IsRevoked, &token.IssuedAt, &token.ExpiresAt, &token.UpdatedAt,
 	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return iam.Token{}, db.ErrTokenNotFound
-	}
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.Token{}, db.ErrTokenNotFound
+		}
+
 		return iam.Token{}, err
 	}
 
