@@ -1,4 +1,6 @@
-# Environment
+# Requirements
+
+## Environment variables
 
 Setting up the project environment.
 

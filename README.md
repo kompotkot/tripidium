@@ -20,10 +20,8 @@ Run the server:
 
 The server will start and listen on the configured address and port (default: `localhost:8080`).
 
-## Configuration
+## Documentation
 
-See [Environment Configuration](docs/Environment.md) for available environment variables.
-
-## Architecture
-
-See [Architecture Overview](docs/Architecture.md) for project structure details.
+- [Architecture](docs/definitions/ARCHITECTURE.md) for project structure details.
+- [Endpoints](docs/definitions/ENDPOINTS.md) of server.
+- [Requirements](docs/definitions/REQUIREMENTS.mdd) for project requirements, available environment variables ,etc.

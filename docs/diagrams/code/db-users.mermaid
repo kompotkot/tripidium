@@ -1,0 +1,34 @@
+---
+config:
+  theme: dark
+  layout: elk
+---
+erDiagram
+	direction TB
+
+	users {
+		uuid id PK
+		bool is_active
+		varchar username
+		varchar email
+		varchar password_hash
+		varchar phone
+		datetime created_at
+		datetime updated_at
+	}
+
+	auth_sessions {
+		uuid id PK
+		uuid user_id FK
+		varchar refresh_token_hash
+		varchar created_ip
+		varchar created_user_agent
+		datetime created_at
+		datetime expires_at
+		datetime revoked_at
+		varchar revoke_reason
+		uuid replaced_by FK
+	}
+
+	users||--o{auth_sessions:"has"
+	auth_sessions||--o|auth_sessions:"replaced"
