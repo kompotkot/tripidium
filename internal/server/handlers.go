@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kompotkot/tripidium/internal/service"
 )
 
@@ -68,7 +69,7 @@ func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	response := UserResponse{
-		Id:        user.Id,
+		Id:        user.ID.String(),
 		Username:  user.Username,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -85,20 +86,26 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authHeader := r.Header.Get("Authorization")
-	tokenId := strings.TrimPrefix(authHeader, "Bearer ")
-	if tokenId == "" {
+	sessionIDStr := strings.TrimPrefix(authHeader, "Bearer ")
+	if sessionIDStr == "" {
 		http.Error(w, "Token is required", http.StatusUnauthorized)
 		return
 	}
 
-	token, err := h.deps.DB.GetToken(r.Context(), tokenId)
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusUnauthorized)
+		return
+	}
+
+	token, err := h.deps.DB.GetAuthSession(r.Context(), sessionID)
 	if err != nil {
 		h.deps.Log.Error("internal.server.handlers.Logout", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	user, err := h.deps.DB.GetUser(r.Context(), token.UserId, "")
+	user, err := h.deps.DB.GetUser(r.Context(), token.UserID)
 	if err != nil {
 		h.deps.Log.Error("internal.server.handlers.User", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -108,7 +115,7 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	response := UserResponse{
-		Id:        user.Id,
+		Id:        user.ID.String(),
 		Username:  user.Username,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,

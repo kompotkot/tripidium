@@ -52,7 +52,8 @@ func SignUp(ctx context.Context, db db.Database, username, password string) (iam
 		return user, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	user, err = db.CreateUser(ctx, username, passwordHash)
+	// TODO(kompotkot): Add email validation
+	user, err = db.CreateUser(ctx, username, "", passwordHash)
 	if err != nil {
 		return user, fmt.Errorf("failed to create user: %w", err)
 	}
