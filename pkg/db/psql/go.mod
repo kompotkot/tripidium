@@ -3,6 +3,7 @@ module github.com/kompotkot/tripidium/pkg/db/psql
 go 1.25.1
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/kompotkot/tripidium v0.0.0-20251028111051-344401a7a521
 )

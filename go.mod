@@ -7,13 +7,13 @@ replace github.com/kompotkot/tripidium/pkg/db/psql => ./pkg/db/psql
 replace github.com/kompotkot/tripidium/pkg/db/sqlite => ./pkg/db/sqlite
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/kompotkot/tripidium/pkg/db/psql v0.0.0-00010101000000-000000000000
 	github.com/kompotkot/tripidium/pkg/db/sqlite v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.37.0
 )
 
 require (
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.6 // indirect

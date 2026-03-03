@@ -24,7 +24,7 @@ const (
 
 	DefaultServerAddr                = "localhost"
 	DefaultServerPort                = "8080"
-	DefaultCORSAllowedDefaultMethods = "GET, OPTIONS"
+	DefaultCORSAllowedDefaultMethods = "GET,OPTIONS"
 )
 
 // Load and parse configuration

@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	db "github.com/kompotkot/tripidium/pkg/db"
 	"github.com/kompotkot/tripidium/pkg/iam"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,17 +53,20 @@ func (p *PsqlDB) Close() error {
 	return nil
 }
 
-func (p *PsqlDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
+func (p *PsqlDB) CreateUser(ctx context.Context, username, email, passwordHash string) (iam.User, error) {
 	const query = `
-		INSERT INTO users (username, password_hash) 
-		VALUES ($1, $2) 
-		RETURNING id, username, password_hash, created_at, updated_at
+		INSERT INTO users (username, email, password_hash)
+		VALUES ($1, $2, $3)
+		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
 	`
 
 	var user iam.User
-	err := p.pool.QueryRow(ctx, query, username, passwordHash).Scan(
-		&user.Id,
+	err := p.pool.QueryRow(ctx, query, username, email, passwordHash).Scan(
+		&user.ID,
+		&user.IsActive,
 		&user.Username,
+		&user.Email,
+		&user.Phone,
 		&user.PasswordHash,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -85,7 +90,7 @@ func (p *PsqlDB) CreateUser(ctx context.Context, username, passwordHash string) 
 	return user, nil
 }
 
-// GetUser retrieves user from the database by it's Id or Username
+// GetUser retrieves user from the database by it's ID or Username
 func (p *PsqlDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
 	var sb strings.Builder
 	args := make([]interface{}, 0, 2)
@@ -109,7 +114,7 @@ func (p *PsqlDB) GetUser(ctx context.Context, userId, username string) (iam.User
 
 	var user iam.User
 	err := p.pool.QueryRow(ctx, query, args...).Scan(
-		&user.Id, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -122,20 +127,59 @@ func (p *PsqlDB) GetUser(ctx context.Context, userId, username string) (iam.User
 	return user, nil
 }
 
-func (p *PsqlDB) GetToken(ctx context.Context, tokenId string) (iam.Token, error) {
-	query := `SELECT id, user_id, is_revoked, issued_at, expires_at, updated_at FROM tokens WHERE id = $1`
+// CreateAuthSession creates a session after login
+func (p *PsqlDB) CreateAuthSession(ctx context.Context, userID uuid.UUID, refreshTokenHash, clientIP, userAgent string) (iam.AuthSession, error) {
+	const defaultSessionTTL = 30 * 24 * time.Hour
+	createdIP := net.ParseIP(clientIP)
+	if createdIP == nil {
+		createdIP = net.IP{}
+	}
+	var ua *string
+	if userAgent != "" {
+		ua = &userAgent
+	}
+	expiresAt := time.Now().UTC().Add(defaultSessionTTL)
 
-	var token iam.Token
-	err := p.pool.QueryRow(ctx, query, tokenId).Scan(
-		&token.Id, &token.UserId, &token.IsRevoked, &token.IssuedAt, &token.ExpiresAt, &token.UpdatedAt,
+	const query = `
+		INSERT INTO auth_sessions (user_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, user_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+	`
+	var s iam.AuthSession
+	err := p.pool.QueryRow(ctx, query, userID, refreshTokenHash, createdIP, ua, expiresAt).Scan(
+		&s.ID, &s.UserID, &s.RefreshTokenHash, &s.CreatedIP, &s.CreatedUserAgent,
+		&s.RevokeReason, &s.RevokedAt, &s.CreatedAt, &s.ExpiresAt, &s.ReplacedBy,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.Token{}, db.ErrTokenNotFound
-		}
-
-		return iam.Token{}, err
+		return iam.AuthSession{}, err
 	}
+	return s, nil
+}
 
-	return token, err
+func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
+	return iam.User{}, nil
+}
+
+func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	return nil
+}
+
+func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
+func (p *PsqlDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
+func (p *PsqlDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {
+	return nil, nil
+}
+
+func (p *PsqlDB) RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error {
+	return nil
+}
+
+func (p *PsqlDB) RevokeAllAuthSessions(ctx context.Context, userID uuid.UUID) error {
+	return nil
 }

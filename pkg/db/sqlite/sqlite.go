@@ -12,6 +12,7 @@ import (
 
 	"github.com/kompotkot/tripidium/pkg/iam"
 
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -90,14 +91,42 @@ func (s *SqliteDB) Close() error {
 	return nil
 }
 
-func (p *SqliteDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
+func (s *SqliteDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
 	return iam.User{}, nil
 }
 
-func (p *SqliteDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
+func (s *SqliteDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
 	return iam.User{}, nil
 }
 
-func (p *SqliteDB) GetToken(ctx context.Context, tokenId string) (iam.Token, error) {
-	return iam.Token{}, nil
+func (s *SqliteDB) CreateAuthSession(ctx context.Context, userID uuid.UUID, refreshTokenHash, clientIP, userAgent string) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
+func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
+	return iam.User{}, nil
+}
+
+func (s *SqliteDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	return nil
+}
+
+func (s *SqliteDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
+func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
+func (s *SqliteDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) RevokeAllAuthSessions(ctx context.Context, userID uuid.UUID) error {
+	return nil
 }

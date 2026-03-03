@@ -105,7 +105,7 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.deps.DB.GetUser(r.Context(), token.UserID)
+	user, err := h.deps.DB.GetUser(r.Context(), token.UserID.String(), "")
 	if err != nil {
 		h.deps.Log.Error("internal.server.handlers.User", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

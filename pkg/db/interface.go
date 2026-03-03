@@ -3,8 +3,9 @@ package db
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/kompotkot/tripidium/pkg/iam"
+
+	"github.com/google/uuid"
 )
 
 // Database represents a common interface for database operations aligned with API endpoints
@@ -20,8 +21,8 @@ type Database interface {
 
 	// CreateUser creates a new user
 	CreateUser(ctx context.Context, username, email, passwordHash string) (iam.User, error)
-	// GetUser returns the user by ID
-	GetUser(ctx context.Context, userID uuid.UUID) (iam.User, error)
+	// GetUser returns the user by ID or Username
+	GetUser(ctx context.Context, userID, username string) (iam.User, error)
 	// UpdateUser updates profile fields
 	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error)
 	// UpdateUserPassword sets a new password hash (PUT /user/password)
