@@ -11,8 +11,8 @@ Basic service endpoints used for availability checks, time diagnostics, and buil
 
 Endpoints for user authentication, token rotation, logout, and session management.
 
-- `POST /auth/signup` - **Create account**. Registers a new user account.
-- `POST /auth/login` - **Sign in**. Authenticates the user and issues access and refresh tokens.
+- `POST /auth/signup` - **Create account**. Registers a new user account. Args: `username`, `email`, `password`.
+- `POST /auth/login` - **Sign in**. Authenticates the user and issues access and refresh tokens. Args: `email`, `password`.
 - `POST /auth/refresh` - **Rotate tokens**. Validates the refresh token and issues a new token pair.
 - `POST /auth/logout` - **Logout current session**. Revokes the current authenticated session.
 - `GET /auth/sessions` - **List sessions**. Returns all active sessions for the current user.
@@ -24,5 +24,5 @@ Endpoints for user authentication, token rotation, logout, and session managemen
 Endpoints for accessing and updating the current user's profile and credentials.
 
 - `GET /user` - **Get profile**. Returns the current user's profile data.
-- `PATCH /user` - **Update profile**. Updates editable profile fields such as username, email, or phone.
-- `PUT /user/password` - **Change password**. Replaces the current password with a new one.
+- `PATCH /user` - **Update profile**. Updates editable profile fields such as username, email, or phone. Args: `username`, `email`, `phone`.
+- `PUT /user/password` - **Change password**. Replaces the current password with a new one. Args: `current_password`, `new_password`.
