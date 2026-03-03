@@ -13,8 +13,8 @@ erDiagram
 		varchar email
 		varchar password_hash
 		varchar phone
-		datetime created_at
-		datetime updated_at
+		timestamptz created_at
+		timestamptz updated_at
 	}
 
 	auth_sessions {
@@ -23,10 +23,10 @@ erDiagram
 		varchar refresh_token_hash
 		varchar created_ip
 		varchar created_user_agent
-		datetime created_at
-		datetime expires_at
-		datetime revoked_at
 		varchar revoke_reason
+		timestamptz revoked_at
+		timestamptz created_at
+		timestamptz expires_at
 		uuid replaced_by FK
 	}
 
