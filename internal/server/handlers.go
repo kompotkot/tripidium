@@ -76,6 +76,8 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate input
+
 	username, err := service.ValidateUsername(usernameRaw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -106,6 +108,8 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to hash password", http.StatusBadRequest)
 		return
 	}
+
+	// Create new user
 
 	userID := uuid.New()
 	isActive := true
@@ -141,6 +145,8 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate input
+
 	var username, email string
 	var err error
 
@@ -164,6 +170,8 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get user by username or email
+
 	user, err := h.deps.DB.GetUser(r.Context(), "", username, email)
 	if err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
@@ -175,6 +183,8 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify password
+
 	ok, err := service.VerifyPassword(password, user.PasswordHash)
 	if err != nil {
 		h.deps.Log.Error("login_verify_password_failed", "error", err)
@@ -185,6 +195,8 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
+
+	// TODO(kompotkot): Start session
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ToUserResponse(user))
