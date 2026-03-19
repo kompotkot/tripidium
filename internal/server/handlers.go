@@ -15,7 +15,7 @@ type Handlers interface {
 	Ping(w http.ResponseWriter, r *http.Request)
 	Health(w http.ResponseWriter, r *http.Request)
 
-	SignUp(w http.ResponseWriter, r *http.Request)
+	AuthSignUp(w http.ResponseWriter, r *http.Request)
 	AuthLogin(w http.ResponseWriter, r *http.Request)
 	AuthRefresh(w http.ResponseWriter, r *http.Request)
 	AuthLogout(w http.ResponseWriter, r *http.Request)
@@ -38,13 +38,6 @@ func NewHandlers(deps Dependencies) Handlers {
 	return &handlers{deps: deps}
 }
 
-type UserResponse struct {
-	Id        string    `json:"id"`
-	Username  string    `json:"username"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // Ping handles the ping-pong endpoint
 func (h *handlers) Ping(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
@@ -57,11 +50,68 @@ func (h *handlers) Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	body := map[string]any{
-		"status":         "ok",
+		"status": "ok",
 		// TODO(kompotkot): move such settings to configuration
 		"response_time_ms": time.Since(start).Milliseconds(),
 	}
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// SignUp handles new user registrations
+func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.deps.Log.Error("signup_parse_failed", "error", err)
+		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
+		return
+	}
+
+	usernameRaw := r.FormValue("username")
+	username, err := service.ValidateUsername(usernameRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	passwordRaw := r.FormValue("password")
+	password, err := service.ValidatePassword(passwordRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	emailRaw := r.FormValue("email")
+	email, err := service.ValidateEmail(emailRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	phoneRaw := r.FormValue("phone")
+	phone, err := service.ValidatePhone(phoneRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := service.HashPassword(password)
+	if err != nil {
+		h.deps.Log.Error("signup_hash_password_failed", "error", err)
+		http.Error(w, "Failed to hash password", http.StatusBadRequest)
+		return
+	}
+
+	userID := uuid.New()
+	isActive := true
+
+	user, err := h.deps.DB.CreateUser(r.Context(), userID, isActive, username, email, passwordHash, phone)
+	if err != nil {
+		h.deps.Log.Error("signup_create_user_failed", "error", err)
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
 func notImplemented(w http.ResponseWriter) {
@@ -90,43 +140,6 @@ func (h *handlers) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request)
 
 func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) {
 	notImplemented(w)
-}
-
-func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
-}
-
-func (h *handlers) UserPasswordPut(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
-}
-
-// SignUp handles new user registrations
-func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("signup_parse_failed", "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-
-	user, err := service.SignUp(r.Context(), h.deps.DB, username, password)
-	if err != nil {
-		h.deps.Log.Error("signup_failed", "error", err)
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	response := UserResponse{
-		Id:        user.ID.String(),
-		Username:  user.Username,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}
-	json.NewEncoder(w).Encode(response)
 }
 
 func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
@@ -158,12 +171,13 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToUserResponse(user))
+}
 
-	response := UserResponse{
-		Id:        user.ID.String(),
-		Username:  user.Username,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}
-	json.NewEncoder(w).Encode(response)
+func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) UserPasswordPut(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
 }

@@ -35,7 +35,7 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("GET /ping", h.Ping)
 	mux.HandleFunc("GET /health", h.Health)
 
-	mux.HandleFunc("POST /auth/signup", h.SignUp)
+	mux.HandleFunc("POST /auth/signup", h.AuthSignUp)
 	mux.HandleFunc("POST /auth/login", h.AuthLogin)
 	mux.HandleFunc("POST /auth/refresh", h.AuthRefresh)
 	mux.HandleFunc("POST /auth/logout", h.AuthLogout)

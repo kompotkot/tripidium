@@ -13,7 +13,7 @@ type User struct {
 	IsActive     bool      // is_active
 	Username     string    // username
 	Email        string    // email
-	Phone        *string   // phone, nullable
+	Phone        int       // phone, nullable
 	PasswordHash string    // password_hash
 	CreatedAt    time.Time // created_at
 	UpdatedAt    time.Time // updated_at

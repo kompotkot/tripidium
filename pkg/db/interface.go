@@ -20,7 +20,7 @@ type Database interface {
 	// --- Users ---
 
 	// CreateUser creates a new user
-	CreateUser(ctx context.Context, username, email, passwordHash string) (iam.User, error)
+	CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error)
 	// GetUser returns the user by ID or Username
 	GetUser(ctx context.Context, userID, username string) (iam.User, error)
 	// UpdateUser updates profile fields

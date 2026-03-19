@@ -53,15 +53,15 @@ func (p *PsqlDB) Close() error {
 	return nil
 }
 
-func (p *PsqlDB) CreateUser(ctx context.Context, username, email, passwordHash string) (iam.User, error) {
+func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error) {
 	const query = `
-		INSERT INTO users (username, email, password_hash)
-		VALUES ($1, $2, $3)
+		INSERT INTO users (id, is_active, username, email, password_hash, phone)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
 	`
 
 	var user iam.User
-	err := p.pool.QueryRow(ctx, query, username, email, passwordHash).Scan(
+	err := p.pool.QueryRow(ctx, query, userID, isActive, username, email, passwordHash, phone).Scan(
 		&user.ID,
 		&user.IsActive,
 		&user.Username,
