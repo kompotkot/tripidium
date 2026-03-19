@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,7 +25,12 @@ func main() {
 	}
 
 	// Initialize logger
-	log := logger.New(cfg.Logger)
+	log, err := logger.New(cfg.Logger)
+	if err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(log)
 	log.Info("Logger initialized")
 
 	// Initialize database connection using registry

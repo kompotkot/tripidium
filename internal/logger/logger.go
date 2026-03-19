@@ -1,39 +1,57 @@
 package logger
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/kompotkot/tripidium/internal/types"
 )
 
 // Initialize main logger
-func New(lc types.LoggerConfig) *slog.Logger {
+func New(lc types.LoggerConfig) (*slog.Logger, error) {
 	var logHandler slog.Handler
 
-	// Parse the log level
+	level := strings.ToLower(strings.TrimSpace(lc.Level))
+	if level == "" {
+		level = "info"
+	}
+
+	// Parse and validate the log level
 	var logLevel slog.Level
-	switch lc.Level {
+	switch level {
 	case "debug":
 		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
 	case "warn":
 		logLevel = slog.LevelWarn
 	case "error":
 		logLevel = slog.LevelError
 	default:
-		logLevel = slog.LevelInfo
+		return nil, fmt.Errorf("invalid log level: %s", lc.Level)
 	}
 
 	logOpts := &slog.HandlerOptions{
 		Level: logLevel,
 	}
 
-	// Parse the log format
-	if lc.Format == "json" {
-		logHandler = slog.NewJSONHandler(os.Stdout, logOpts)
-	} else {
-		logHandler = slog.NewTextHandler(os.Stdout, logOpts)
+	format := strings.ToLower(strings.TrimSpace(lc.Format))
+	if format == "" {
+		format = "text"
 	}
 
-	return slog.New(logHandler)
+	// Parse and validate the log format
+	switch format {
+	case "json":
+		logHandler = slog.NewJSONHandler(os.Stdout, logOpts)
+	case "text":
+		logHandler = slog.NewTextHandler(os.Stdout, logOpts)
+	default:
+		return nil, fmt.Errorf("invalid log format: %s", lc.Format)
+	}
+
+	log := slog.New(logHandler).With("service", "tripidium")
+	return log, nil
 }

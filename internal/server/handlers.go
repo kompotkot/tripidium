@@ -36,22 +36,19 @@ type UserResponse struct {
 
 // Ping handles the ping-pong endpoint
 func (h *handlers) Ping(w http.ResponseWriter, r *http.Request) {
-	h.deps.Log.Info("internal.server.handlers.Ping", "method", r.Method, "path", r.URL.Path)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("pong"))
 }
 
 // SignUp handles new user registrations
 func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
-	h.deps.Log.Info("internal.server.handlers.SignUp", "method", r.Method, "path", r.URL.Path)
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("internal.server.handlers.SignUp", "error", err)
+		h.deps.Log.Error("signup_parse_failed", "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
 		return
 	}
@@ -61,7 +58,7 @@ func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
 
 	user, err := service.SignUp(r.Context(), h.deps.DB, username, password)
 	if err != nil {
-		h.deps.Log.Error("internal.server.handlers.SignUp", "error", err)
+		h.deps.Log.Error("signup_failed", "error", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
@@ -78,8 +75,6 @@ func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
-	h.deps.Log.Info("internal.server.handlers.User", "method", r.Method, "path", r.URL.Path)
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -100,14 +95,14 @@ func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.deps.DB.GetAuthSession(r.Context(), sessionID)
 	if err != nil {
-		h.deps.Log.Error("internal.server.handlers.Logout", "error", err)
+		h.deps.Log.Error("get_user_auth_failed", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	user, err := h.deps.DB.GetUser(r.Context(), token.UserID.String(), "")
 	if err != nil {
-		h.deps.Log.Error("internal.server.handlers.User", "error", err)
+		h.deps.Log.Error("get_user_failed", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

@@ -37,7 +37,8 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("/signup", h.SignUp)
 	mux.HandleFunc("/user", h.User)
 
-	commonHandler := s.corsMiddleware(mux)
+	commonHandler := s.loggerMiddleware(mux)
+	commonHandler = s.corsMiddleware(commonHandler)
 	commonHandler = s.panicMiddleware(commonHandler)
 
 	return &commonHandler
