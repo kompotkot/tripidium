@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/mail"
@@ -94,4 +95,37 @@ func HashPassword(password string) (string, error) {
 
 	// Return the combined salt and hash in a single string as "salt$hash" format
 	return fmt.Sprintf("%s$%s", encodedSalt, encodedHash), nil
+}
+
+// VerifyPassword checks whether the provided password matches the stored salt$hash value.
+func VerifyPassword(password, passwordHash string) (bool, error) {
+	parts := strings.Split(passwordHash, "$")
+	if len(parts) != 2 {
+		return false, fmt.Errorf("invalid stored password hash format")
+	}
+
+	encodedSalt := parts[0]
+	encodedHash := parts[1]
+
+	salt, err := base64.RawStdEncoding.DecodeString(encodedSalt)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode salt: %w", err)
+	}
+
+	expectedHash, err := base64.RawStdEncoding.DecodeString(encodedHash)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode hash: %w", err)
+	}
+
+	computedHash := argon2.IDKey(
+		[]byte(password),
+		salt,
+		argonTime,
+		argonMemory,
+		argonThreads,
+		uint32(len(expectedHash)),
+	)
+
+	match := subtle.ConstantTimeCompare(computedHash, expectedHash) == 1
+	return match, nil
 }

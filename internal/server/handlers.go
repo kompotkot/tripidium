@@ -2,12 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/kompotkot/tripidium/internal/service"
+	"github.com/kompotkot/tripidium/pkg/db"
 )
 
 // Extensible handlers interface
@@ -66,27 +67,33 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	usernameRaw := r.FormValue("username")
+	emailRaw := r.FormValue("email")
+	passwordRaw := r.FormValue("password")
+	phoneRaw := r.FormValue("phone")
+
+	if usernameRaw == "" || emailRaw == "" || passwordRaw == "" {
+		http.Error(w, "Username, email and password are required", http.StatusBadRequest)
+		return
+	}
+
 	username, err := service.ValidateUsername(usernameRaw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	passwordRaw := r.FormValue("password")
-	password, err := service.ValidatePassword(passwordRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	emailRaw := r.FormValue("email")
 	email, err := service.ValidateEmail(emailRaw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	phoneRaw := r.FormValue("phone")
+	password, err := service.ValidatePassword(passwordRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	phone, err := service.ValidatePhone(phoneRaw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -118,8 +125,69 @@ func notImplemented(w http.ResponseWriter) {
 	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }
 
-func (h *handlers) AuthLogin(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.deps.Log.Error("signup_parse_failed", "error", err)
+		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
+		return
+	}
+
+	usernameRaw := r.FormValue("username")
+	emailRaw := r.FormValue("email")
+	passwordRaw := r.FormValue("password")
+
+	if usernameRaw == "" && emailRaw == "" {
+		http.Error(w, "Username or email is required", http.StatusBadRequest)
+		return
+	}
+
+	var username, email string
+	var err error
+
+	if usernameRaw != "" {
+		username, err = service.ValidateUsername(usernameRaw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if emailRaw != "" {
+		email, err = service.ValidateEmail(emailRaw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	password, err := service.ValidatePassword(passwordRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.deps.DB.GetUser(r.Context(), "", username, email)
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		h.deps.Log.Error("login_get_user_failed", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	ok, err := service.VerifyPassword(password, user.PasswordHash)
+	if err != nil {
+		h.deps.Log.Error("login_verify_password_failed", "error", err)
+		http.Error(w, "Failed to verify password", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
 func (h *handlers) AuthRefresh(w http.ResponseWriter, _ *http.Request) {
@@ -143,35 +211,7 @@ func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) 
 }
 
 func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Authorization")
-	sessionIDStr := strings.TrimPrefix(authHeader, "Bearer ")
-	if sessionIDStr == "" {
-		http.Error(w, "Token is required", http.StatusUnauthorized)
-		return
-	}
-
-	sessionID, err := uuid.Parse(sessionIDStr)
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusUnauthorized)
-		return
-	}
-
-	token, err := h.deps.DB.GetAuthSession(r.Context(), sessionID)
-	if err != nil {
-		h.deps.Log.Error("get_user_auth_failed", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	user, err := h.deps.DB.GetUser(r.Context(), token.UserID.String(), "")
-	if err != nil {
-		h.deps.Log.Error("get_user_failed", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToUserResponse(user))
+	notImplemented(w)
 }
 
 func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {

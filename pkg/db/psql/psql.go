@@ -91,36 +91,49 @@ func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool
 }
 
 // GetUser retrieves user from the database by it's ID or Username
-func (p *PsqlDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
-	var sb strings.Builder
-	args := make([]interface{}, 0, 2)
+func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (iam.User, error) {
+	const baseQuery = `
+		SELECT id, is_active, username, email, phone, password_hash, created_at, updated_at
+		FROM users
+	`
 
-	sb.WriteString(`SELECT id, username, password_hash, created_at, updated_at FROM users `)
+	conditions := make([]string, 0, 3)
+	args := make([]any, 0, 3)
 
-	sep := " WHERE "
-	if userId != "" {
-		sb.WriteString(sep)
-		args = append(args, userId)
-		sb.WriteString(fmt.Sprintf("id = $%d", len(args)))
-		sep = " AND "
+	if userID != "" {
+		args = append(args, userID)
+		conditions = append(conditions, fmt.Sprintf("id = $%d", len(args)))
 	}
 	if username != "" {
-		sb.WriteString(sep)
 		args = append(args, username)
-		sb.WriteString(fmt.Sprintf("username = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("username = $%d", len(args)))
+	}
+	if email != "" {
+		args = append(args, email)
+		conditions = append(conditions, fmt.Sprintf("email = $%d", len(args)))
 	}
 
-	query := sb.String()
+	if len(conditions) == 0 {
+		return iam.User{}, fmt.Errorf("GetUser: at least one filter must be provided")
+	}
+
+	query := baseQuery + " WHERE " + strings.Join(conditions, " AND ")
 
 	var user iam.User
 	err := p.pool.QueryRow(ctx, query, args...).Scan(
-		&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID,
+		&user.IsActive,
+		&user.Username,
+		&user.Email,
+		&user.Phone,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return iam.User{}, db.ErrUserNotFound
 		}
-
 		return iam.User{}, err
 	}
 
