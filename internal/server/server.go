@@ -32,10 +32,20 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	// Create handlers with dependencies
 	h := NewHandlers(s.deps)
 
-	// Register routes
-	mux.HandleFunc("/ping", h.Ping)
-	mux.HandleFunc("/signup", h.SignUp)
-	mux.HandleFunc("/user", h.User)
+	mux.HandleFunc("GET /ping", h.Ping)
+	mux.HandleFunc("GET /health", h.Health)
+
+	mux.HandleFunc("POST /auth/signup", h.SignUp)
+	mux.HandleFunc("POST /auth/login", h.AuthLogin)
+	mux.HandleFunc("POST /auth/refresh", h.AuthRefresh)
+	mux.HandleFunc("POST /auth/logout", h.AuthLogout)
+	mux.HandleFunc("GET /auth/sessions", h.AuthSessionsList)
+	mux.HandleFunc("DELETE /auth/sessions", h.AuthSessionsRevokeAll)
+	mux.HandleFunc("DELETE /auth/sessions/{session_id}", h.AuthSessionRevokeOne)
+
+	mux.HandleFunc("GET /user", h.User)
+	mux.HandleFunc("PATCH /user", h.UserPatch)
+	mux.HandleFunc("PUT /user/password", h.UserPasswordPut)
 
 	commonHandler := s.loggerMiddleware(mux)
 	commonHandler = s.corsMiddleware(commonHandler)

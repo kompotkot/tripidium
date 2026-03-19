@@ -13,8 +13,19 @@ import (
 // Extensible handlers interface
 type Handlers interface {
 	Ping(w http.ResponseWriter, r *http.Request)
+	Health(w http.ResponseWriter, r *http.Request)
+
 	SignUp(w http.ResponseWriter, r *http.Request)
+	AuthLogin(w http.ResponseWriter, r *http.Request)
+	AuthRefresh(w http.ResponseWriter, r *http.Request)
+	AuthLogout(w http.ResponseWriter, r *http.Request)
+	AuthSessionsList(w http.ResponseWriter, r *http.Request)
+	AuthSessionsRevokeAll(w http.ResponseWriter, r *http.Request)
+	AuthSessionRevokeOne(w http.ResponseWriter, r *http.Request)
+
 	User(w http.ResponseWriter, r *http.Request)
+	UserPatch(w http.ResponseWriter, r *http.Request)
+	UserPasswordPut(w http.ResponseWriter, r *http.Request)
 }
 
 // handlers holds handlers with dependencies
@@ -40,13 +51,57 @@ func (h *handlers) Ping(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("pong"))
 }
 
+// Health returns a minimal service health payload with response time
+func (h *handlers) Health(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	body := map[string]any{
+		"status":         "ok",
+		// TODO(kompotkot): move such settings to configuration
+		"response_time_ms": time.Since(start).Milliseconds(),
+	}
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func notImplemented(w http.ResponseWriter) {
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
+}
+
+func (h *handlers) AuthLogin(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) AuthRefresh(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) AuthLogout(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) AuthSessionsList(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (h *handlers) UserPasswordPut(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
 // SignUp handles new user registrations
 func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		h.deps.Log.Error("signup_parse_failed", "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
@@ -75,11 +130,6 @@ func (h *handlers) SignUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	authHeader := r.Header.Get("Authorization")
 	sessionIDStr := strings.TrimPrefix(authHeader, "Bearer ")
 	if sessionIDStr == "" {
