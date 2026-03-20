@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -131,7 +132,7 @@ func notImplemented(w http.ResponseWriter) {
 
 func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("signup_parse_failed", "error", err)
+		h.deps.Log.Error("login_parse_failed", "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
 		return
 	}
@@ -183,6 +184,11 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !user.IsActive {
+		http.Error(w, "User is not active", http.StatusUnauthorized)
+		return
+	}
+
 	// Verify password
 
 	ok, err := service.VerifyPassword(password, user.PasswordHash)
@@ -196,10 +202,51 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO(kompotkot): Start session
+	// Create refresh token pair
+
+	refreshToken, refreshTokenHash, err := service.CreateRefreshTokenPair()
+	if err != nil {
+		h.deps.Log.Error("login_refresh_token_create_failed", "error", err)
+		http.Error(w, "Failed to create refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse client IP, user agent and create auth session
+
+	clientIP := r.RemoteAddr
+	if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
+		clientIP = host
+	}
+
+	userAgentRaw := r.UserAgent()
+	var userAgent *string
+	if userAgentRaw != "" {
+		userAgent = &userAgentRaw
+	}
+
+	sessionID := uuid.New()
+	familyID := uuid.New()
+
+	expiresAt := time.Now().UTC().Add(h.deps.Cfg.AccessSessionTTL)
+
+	session, err := h.deps.DB.CreateAuthSession(r.Context(), sessionID, user.ID, familyID, refreshTokenHash, clientIP, userAgent, expiresAt)
+	if err != nil {
+		h.deps.Log.Error("login_create_session_failed", "error", err)
+		http.Error(w, "Failed to create auth session", http.StatusInternalServerError)
+		return
+	}
+
+	// Issue access token
+
+	accessToken, err := service.CreateAccessToken(user.ID, session.ID, h.deps.Cfg.AccessTokenPrivateKey)
+	if err != nil {
+		h.deps.Log.Error("login_access_token_create_failed", "error", err)
+		http.Error(w, "Failed to create access token", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToUserResponse(user))
+	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, refreshToken))
 }
 
 func (h *handlers) AuthRefresh(w http.ResponseWriter, _ *http.Request) {

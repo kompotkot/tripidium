@@ -1,14 +1,19 @@
 package service
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/mail"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -21,6 +26,14 @@ const (
 	saltLen      int    = 16
 
 	isPhoneRequired bool = false
+
+	accessTokenTTL      = 5 * time.Minute
+	accessTokenIssuer   = "auth.tripidium"
+	accessTokenAudience = "api.tripidium"
+	// TODO(kompotkot): Add rotation of access token kid logic
+	accessTokenKid  = "ed25519-v1"
+	accessTokenTyp  = "access+jwt"
+	refreshTokenLen = 32
 )
 
 // ValidateUsername validates the username
@@ -128,4 +141,49 @@ func VerifyPassword(password, passwordHash string) (bool, error) {
 
 	match := subtle.ConstantTimeCompare(computedHash, expectedHash) == 1
 	return match, nil
+}
+
+// AccessTokenClaims contains custom access token claims
+type AccessTokenClaims struct {
+	SessionID string `json:"sid"`
+	jwt.RegisteredClaims
+}
+
+// CreateAccessToken creates and signs a short-lived JWT access token
+func CreateAccessToken(userID, sessionID uuid.UUID, accessTokenPrivateKey ed25519.PrivateKey) (string, error) {
+	now := time.Now().UTC()
+	claims := AccessTokenClaims{
+		SessionID: sessionID.String(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID.String(),
+			Issuer:    accessTokenIssuer,
+			Audience:  jwt.ClaimStrings{accessTokenAudience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        uuid.NewString(),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = accessTokenKid
+	token.Header["typ"] = accessTokenTyp
+
+	signedToken, err := token.SignedString(accessTokenPrivateKey)
+	if err != nil {
+		return "", fmt.Errorf("sign access token error: %w", err)
+	}
+	return signedToken, nil
+}
+
+// CreateRefreshTokenPair creates an opaque refresh token and its DB-safe hash
+func CreateRefreshTokenPair() (refreshToken string, refreshTokenHash string, err error) {
+	raw := make([]byte, refreshTokenLen)
+	if _, err := rand.Read(raw); err != nil {
+		return "", "", fmt.Errorf("generate refresh token error: %w", err)
+	}
+
+	refreshToken = base64.RawURLEncoding.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(refreshToken))
+	refreshTokenHash = base64.RawURLEncoding.EncodeToString(sum[:])
+	return refreshToken, refreshTokenHash, nil
 }

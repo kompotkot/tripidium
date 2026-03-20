@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -141,29 +140,30 @@ func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (i
 }
 
 // CreateAuthSession creates a session after login
-func (p *PsqlDB) CreateAuthSession(ctx context.Context, userID uuid.UUID, refreshTokenHash, clientIP, userAgent string) (iam.AuthSession, error) {
-	const defaultSessionTTL = 30 * 24 * time.Hour
-	createdIP := net.ParseIP(clientIP)
-	if createdIP == nil {
-		createdIP = net.IP{}
-	}
-	var ua *string
-	if userAgent != "" {
-		ua = &userAgent
-	}
-	expiresAt := time.Now().UTC().Add(defaultSessionTTL)
-
+func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, userID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
 	const query = `
-		INSERT INTO auth_sessions (user_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, user_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+		INSERT INTO auth_sessions (id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
 	`
 	var s iam.AuthSession
-	err := p.pool.QueryRow(ctx, query, userID, refreshTokenHash, createdIP, ua, expiresAt).Scan(
-		&s.ID, &s.UserID, &s.RefreshTokenHash, &s.CreatedIP, &s.CreatedUserAgent,
+	err := p.pool.QueryRow(ctx, query, sessionID, userID, familyID, refreshTokenHash, createdIP, createdUserAgent, expiresAt).Scan(
+		&s.ID, &s.UserID, &s.FamilyID, &s.RefreshTokenHash, &s.CreatedIP, &s.CreatedUserAgent,
 		&s.RevokeReason, &s.RevokedAt, &s.CreatedAt, &s.ExpiresAt, &s.ReplacedBy,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.AuthSession{}, db.ErrUnexpectedEmptyReturn
+		}
+
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			// user_id references users(id) foreign_key_violation
+			if pgErr.Code == "23503" {
+				return iam.AuthSession{}, db.ErrUserNotFound
+			}
+		}
+
 		return iam.AuthSession{}, err
 	}
 	return s, nil

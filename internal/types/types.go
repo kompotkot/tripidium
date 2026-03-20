@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"crypto/ed25519"
+	"time"
+)
 
 // Logger configuration
 type LoggerConfig struct {
@@ -22,6 +25,8 @@ type ServerConfig struct {
 	Port                      string
 	CORSWhitelist             map[string]bool
 	CORSAllowedDefaultMethods string
+	AccessTokenPrivateKey     ed25519.PrivateKey
+	AccessSessionTTL          time.Duration
 }
 
 // Main configuration

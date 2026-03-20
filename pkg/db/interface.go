@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/kompotkot/tripidium/pkg/iam"
 
@@ -31,7 +32,7 @@ type Database interface {
 	// --- Auth sessions ---
 
 	// CreateAuthSession creates a session after login
-	CreateAuthSession(ctx context.Context, userID uuid.UUID, refreshTokenHash, clientIP, userAgent string) (iam.AuthSession, error)
+	CreateAuthSession(ctx context.Context, sessionID uuid.UUID, userID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
 	// GetAuthSession returns a session by ID
 	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error)
 	// GetAuthSessionByRefreshToken returns a session by refresh token hash

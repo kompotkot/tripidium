@@ -23,6 +23,7 @@ type User struct {
 type AuthSession struct {
 	ID               uuid.UUID  // id
 	UserID           uuid.UUID  // user_id
+	FamilyID         uuid.UUID  // family_id
 	RefreshTokenHash string     // refresh_token_hash
 	CreatedIP        net.IP     // created_ip
 	CreatedUserAgent *string    // created_user_agent, nullable

@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,6 +28,9 @@ const (
 	DefaultServerAddr                = "localhost"
 	DefaultServerPort                = "8080"
 	DefaultCORSAllowedDefaultMethods = "GET,POST,PATCH,PUT,DELETE,OPTIONS"
+
+	DefaultAccessTokenPrivateKeyFilePath = "access_token_private_key.pem"
+	DefaultAccessSessionTTL              = 30 * 24 * time.Hour
 )
 
 // Load and parse configuration
@@ -119,6 +125,41 @@ func Load() (*types.Config, error) {
 		serverCORSAllowedDefaultMethodsEnv = DefaultCORSAllowedDefaultMethods
 	}
 
+	accessTokenPrivateKeyFilePathEnv := os.Getenv("ACCESS_TOKEN_PRIVATE_KEY_FILE_PATH")
+	if accessTokenPrivateKeyFilePathEnv == "" {
+		accessTokenPrivateKeyFilePathEnv = DefaultAccessTokenPrivateKeyFilePath
+	}
+
+	accessTokenPrivateKeyFile, err := os.ReadFile(accessTokenPrivateKeyFilePathEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read access token private key file: %v", err)
+	}
+	block, _ := pem.Decode(accessTokenPrivateKeyFile)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM access token private key")
+	}
+	parsedPrivateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PKCS#8 access token private key: %v", err)
+	}
+	accessTokenPrivateKey, ok := parsedPrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("access token private key is not ed25519")
+	}
+
+	var accessSessionTTL time.Duration
+	accessSessionTTLEnv := os.Getenv("ACCESS_SESSION_TTL_SEC")
+	if accessSessionTTLEnv != "" {
+		if val, err := strconv.Atoi(accessSessionTTLEnv); err != nil {
+			fmt.Printf("Ignoring incorrect access session TTL: %s, must be a number", accessSessionTTLEnv)
+			accessSessionTTL = DefaultAccessSessionTTL
+		} else {
+			accessSessionTTL = time.Duration(val) * time.Second
+		}
+	} else {
+		accessSessionTTL = DefaultAccessSessionTTL
+	}
+
 	cfg = types.Config{
 		Logger: types.LoggerConfig{
 			Level:  logLevelEnv,
@@ -135,6 +176,8 @@ func Load() (*types.Config, error) {
 			Port:                      serverPort,
 			CORSWhitelist:             corsWhitelist,
 			CORSAllowedDefaultMethods: serverCORSAllowedDefaultMethodsEnv,
+			AccessTokenPrivateKey:     accessTokenPrivateKey,
+			AccessSessionTTL:          accessSessionTTL,
 		},
 	}
 
