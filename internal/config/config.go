@@ -42,7 +42,7 @@ const (
 	// JWT defaults
 	DefaultAccessTokenPrivateKeyFilePath = "access_token_private_key.pem"
 
-	DefaultAccessSessionTTL    time.Duration = 30 * 24 * time.Hour
+	DefaultAccessSessionTTL    time.Duration = 7 * 24 * time.Hour
 	DefaultAccessTokenTTL      time.Duration = 5 * time.Minute
 	DefaultAccessTokenIssuer                 = "auth.tripidium"
 	DefaultAccessTokenAudience               = "api.tripidium"
