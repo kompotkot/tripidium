@@ -22,6 +22,7 @@ import (
 	"github.com/kompotkot/tripidium/pkg/db"
 )
 
+// runServer initializes dependencies, starts the HTTP server, and handles graceful shutdown
 func runServer() error {
 	// Load configuration
 	cfg, err := config.Load()
@@ -101,6 +102,7 @@ func runServer() error {
 	return nil
 }
 
+// serverCMD parses server command arguments and runs the server command
 func serverCMD(args []string) error {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -115,6 +117,7 @@ func serverCMD(args []string) error {
 	return runServer()
 }
 
+// runToken generates an Ed25519 key pair and prints or writes it in PEM form
 func runToken(fileName string) error {
 	// Generate new ed25519 key pair and return in PKCS#8 format
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
@@ -168,6 +171,7 @@ func runToken(fileName string) error {
 	return nil
 }
 
+// tokenCMD parses token command flags and executes token generation
 func tokenCMD(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -185,10 +189,12 @@ func tokenCMD(args []string) error {
 	return runToken(fileName)
 }
 
+// usageCMD writes the list of available commands to the provided output stream
 func usageCMD(w *os.File) {
 	fmt.Fprintln(w, "Use one of command: server, token")
 }
 
+// run routes top-level CLI arguments to the appropriate subcommand handler
 func run(args []string) error {
 	if len(args) == 0 {
 		usageCMD(os.Stderr)
