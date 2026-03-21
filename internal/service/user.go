@@ -1,7 +1,6 @@
 package service
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -15,25 +14,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/argon2"
-)
 
-// TODO(kompotkot): Move to configuration
-const (
-	argonTime    uint32 = 1
-	argonMemory  uint32 = 64 * 1024
-	argonThreads uint8  = 4
-	argonKeyLen  uint32 = 32
-	saltLen      int    = 16
-
-	isPhoneRequired bool = false
-
-	accessTokenTTL      = 5 * time.Minute
-	accessTokenIssuer   = "auth.tripidium"
-	accessTokenAudience = "api.tripidium"
-	// TODO(kompotkot): Add rotation of access token kid logic
-	accessTokenKid  = "ed25519-v1"
-	accessTokenTyp  = "access+jwt"
-	refreshTokenLen = 32
+	"github.com/kompotkot/tripidium/internal/types"
 )
 
 // ValidateUsername validates the username
@@ -66,7 +48,7 @@ func ValidateEmail(emailRaw string) (string, error) {
 }
 
 // ValidatePhone validates the phone number
-func ValidatePhone(phoneRaw string) (int, error) {
+func ValidatePhone(phoneRaw string, isPhoneRequired bool) (int, error) {
 	// If phone is not required, then empty allowed
 	if !isPhoneRequired && phoneRaw == "" {
 		return 0, nil
@@ -91,16 +73,16 @@ func ValidatePhone(phoneRaw string) (int, error) {
 }
 
 // HashPassword securely hashes a password using Argon2 algorithm
-func HashPassword(password string) (string, error) {
+func HashPassword(password string, authConfig types.AuthConfig) (string, error) {
 	// Generate a random salt for password hashing
-	salt := make([]byte, saltLen)
+	salt := make([]byte, authConfig.SaltLen)
 	_, err := rand.Read(salt)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate salt: %w", err)
 	}
 
 	// Hash the password using Argon2id with the generated salt
-	hash := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	hash := argon2.IDKey([]byte(password), salt, authConfig.ArgonTime, authConfig.ArgonMemory, authConfig.ArgonThreads, authConfig.ArgonKeyLen)
 
 	// Encode salt and hash to base64 for storage
 	encodedSalt := base64.RawStdEncoding.EncodeToString(salt)
@@ -111,7 +93,7 @@ func HashPassword(password string) (string, error) {
 }
 
 // VerifyPassword checks whether the provided password matches the stored salt$hash value.
-func VerifyPassword(password, passwordHash string) (bool, error) {
+func VerifyPassword(password, passwordHash string, authConfig types.AuthConfig) (bool, error) {
 	parts := strings.Split(passwordHash, "$")
 	if len(parts) != 2 {
 		return false, fmt.Errorf("invalid stored password hash format")
@@ -133,9 +115,9 @@ func VerifyPassword(password, passwordHash string) (bool, error) {
 	computedHash := argon2.IDKey(
 		[]byte(password),
 		salt,
-		argonTime,
-		argonMemory,
-		argonThreads,
+		authConfig.ArgonTime,
+		authConfig.ArgonMemory,
+		authConfig.ArgonThreads,
 		uint32(len(expectedHash)),
 	)
 
@@ -150,25 +132,25 @@ type AccessTokenClaims struct {
 }
 
 // CreateAccessToken creates and signs a short-lived JWT access token
-func CreateAccessToken(userID, sessionID uuid.UUID, accessTokenPrivateKey ed25519.PrivateKey) (string, error) {
+func CreateAccessToken(userID, sessionID uuid.UUID, authConfig types.AuthConfig) (string, error) {
 	now := time.Now().UTC()
 	claims := AccessTokenClaims{
 		SessionID: sessionID.String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
-			Issuer:    accessTokenIssuer,
-			Audience:  jwt.ClaimStrings{accessTokenAudience},
-			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
+			Issuer:    authConfig.AccessTokenIssuer,
+			Audience:  jwt.ClaimStrings{authConfig.AccessTokenAudience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(authConfig.AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ID:        uuid.NewString(),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	token.Header["kid"] = accessTokenKid
-	token.Header["typ"] = accessTokenTyp
+	token.Header["kid"] = authConfig.AccessTokenKid
+	token.Header["typ"] = authConfig.AccessTokenTyp
 
-	signedToken, err := token.SignedString(accessTokenPrivateKey)
+	signedToken, err := token.SignedString(authConfig.AccessTokenPrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("sign access token error: %w", err)
 	}
@@ -176,8 +158,8 @@ func CreateAccessToken(userID, sessionID uuid.UUID, accessTokenPrivateKey ed2551
 }
 
 // CreateRefreshTokenPair creates an opaque refresh token and its DB-safe hash
-func CreateRefreshTokenPair() (refreshToken string, refreshTokenHash string, err error) {
-	raw := make([]byte, refreshTokenLen)
+func CreateRefreshTokenPair(authConfig types.AuthConfig) (refreshToken string, refreshTokenHash string, err error) {
+	raw := make([]byte, authConfig.RefreshTokenLen)
 	if _, err := rand.Read(raw); err != nil {
 		return "", "", fmt.Errorf("generate refresh token error: %w", err)
 	}

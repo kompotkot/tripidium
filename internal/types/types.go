@@ -19,14 +19,36 @@ type DatabaseConfig struct {
 	ConnMaxLifetime time.Duration
 }
 
+type AuthConfig struct {
+	// Argon configuration
+	ArgonTime    uint32
+	ArgonMemory  uint32
+	ArgonThreads uint8
+	ArgonKeyLen  uint32
+	SaltLen      int
+
+	// JWT configuration
+	AccessSessionTTL      time.Duration
+	AccessTokenPrivateKey ed25519.PrivateKey
+	AccessTokenTTL        time.Duration
+	AccessTokenIssuer     string
+	AccessTokenAudience   string
+	AccessTokenKid        string
+	AccessTokenTyp        string
+	RefreshTokenLen       int
+}
+
 // Server configuration
 type ServerConfig struct {
-	Addr                      string
-	Port                      string
+	Addr string
+	Port string
+
+	IsPhoneRequired bool
+
 	CORSWhitelist             map[string]bool
 	CORSAllowedDefaultMethods string
-	AccessTokenPrivateKey     ed25519.PrivateKey
-	AccessSessionTTL          time.Duration
+
+	AuthConfig AuthConfig
 }
 
 // Main configuration

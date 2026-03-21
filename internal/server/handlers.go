@@ -97,13 +97,13 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	phone, err := service.ValidatePhone(phoneRaw)
+	phone, err := service.ValidatePhone(phoneRaw, h.deps.Cfg.IsPhoneRequired)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	passwordHash, err := service.HashPassword(password)
+	passwordHash, err := service.HashPassword(password, h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("signup_hash_password_failed", "error", err)
 		http.Error(w, "Failed to hash password", http.StatusBadRequest)
@@ -191,7 +191,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Verify password
 
-	ok, err := service.VerifyPassword(password, user.PasswordHash)
+	ok, err := service.VerifyPassword(password, user.PasswordHash, h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("login_verify_password_failed", "error", err)
 		http.Error(w, "Failed to verify password", http.StatusInternalServerError)
@@ -204,7 +204,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Create refresh token pair
 
-	refreshToken, refreshTokenHash, err := service.CreateRefreshTokenPair()
+	refreshToken, refreshTokenHash, err := service.CreateRefreshTokenPair(h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("login_refresh_token_create_failed", "error", err)
 		http.Error(w, "Failed to create refresh token", http.StatusInternalServerError)
@@ -227,7 +227,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 	sessionID := uuid.New()
 	familyID := uuid.New()
 
-	expiresAt := time.Now().UTC().Add(h.deps.Cfg.AccessSessionTTL)
+	expiresAt := time.Now().UTC().Add(h.deps.Cfg.AuthConfig.AccessSessionTTL)
 
 	session, err := h.deps.DB.CreateAuthSession(r.Context(), sessionID, user.ID, familyID, refreshTokenHash, clientIP, userAgent, expiresAt)
 	if err != nil {
@@ -238,7 +238,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Issue access token
 
-	accessToken, err := service.CreateAccessToken(user.ID, session.ID, h.deps.Cfg.AccessTokenPrivateKey)
+	accessToken, err := service.CreateAccessToken(user.ID, session.ID, h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("login_access_token_create_failed", "error", err)
 		http.Error(w, "Failed to create access token", http.StatusInternalServerError)

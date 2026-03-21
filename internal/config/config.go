@@ -25,12 +25,30 @@ const (
 	DefaultDatabaseMaxConns        = 10
 	DefaultDatabaseConnMaxLifetime = 30 * time.Second
 
-	DefaultServerAddr                = "localhost"
-	DefaultServerPort                = "8080"
+	// Server defaults
+	DefaultServerAddr           = "localhost"
+	DefaultServerPort           = "8080"
+	DefaultIsPhoneRequired bool = false
+
 	DefaultCORSAllowedDefaultMethods = "GET,POST,PATCH,PUT,DELETE,OPTIONS"
 
+	// Argon defaults
+	DefaultArgonTime    uint32 = 1
+	DefaultArgonMemory  uint32 = 64 * 1024
+	DefaultArgonThreads uint8  = 4
+	DefaultArgonKeyLen  uint32 = 32
+	DefaultSaltLen      int    = 16
+
+	// JWT defaults
 	DefaultAccessTokenPrivateKeyFilePath = "access_token_private_key.pem"
-	DefaultAccessSessionTTL              = 30 * 24 * time.Hour
+
+	DefaultAccessSessionTTL    time.Duration = 30 * 24 * time.Hour
+	DefaultAccessTokenTTL      time.Duration = 5 * time.Minute
+	DefaultAccessTokenIssuer                 = "auth.tripidium"
+	DefaultAccessTokenAudience               = "api.tripidium"
+	DefaultAccessTokenKid                    = "ed25519-v1" // TODO(kompotkot): Add rotation of access token kid logic
+	DefaultAccessTokenTyp                    = "access+jwt"
+	DefaultRefreshTokenLen     int           = 32
 )
 
 // Load and parse configuration
@@ -172,12 +190,30 @@ func Load() (*types.Config, error) {
 			ConnMaxLifetime: databaseConnMaxLifetime,
 		},
 		Server: types.ServerConfig{
-			Addr:                      serverAddr,
-			Port:                      serverPort,
+			Addr: serverAddr,
+			Port: serverPort,
+
+			IsPhoneRequired: DefaultIsPhoneRequired,
+
 			CORSWhitelist:             corsWhitelist,
 			CORSAllowedDefaultMethods: serverCORSAllowedDefaultMethodsEnv,
-			AccessTokenPrivateKey:     accessTokenPrivateKey,
-			AccessSessionTTL:          accessSessionTTL,
+
+			AuthConfig: types.AuthConfig{
+				ArgonTime:    DefaultArgonTime,
+				ArgonMemory:  DefaultArgonMemory,
+				ArgonThreads: DefaultArgonThreads,
+				ArgonKeyLen:  DefaultArgonKeyLen,
+				SaltLen:      DefaultSaltLen,
+
+				AccessSessionTTL:      accessSessionTTL,
+				AccessTokenPrivateKey: accessTokenPrivateKey,
+				AccessTokenTTL:        DefaultAccessTokenTTL,
+				AccessTokenIssuer:     DefaultAccessTokenIssuer,
+				AccessTokenAudience:   DefaultAccessTokenAudience,
+				AccessTokenKid:        DefaultAccessTokenKid,
+				AccessTokenTyp:        DefaultAccessTokenTyp,
+				RefreshTokenLen:       DefaultRefreshTokenLen,
+			},
 		},
 	}
 
