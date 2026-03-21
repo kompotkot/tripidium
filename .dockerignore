@@ -54,6 +54,7 @@ img/
 .cursorignore
 
 *.pem
+*.pub
 
 *.ps1
 *.env
