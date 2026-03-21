@@ -15,7 +15,7 @@ go build -tags sqlite -o tripidium ./cmd/tripidium
 Run the server:
 
 ```bash
-./tripidium
+./tripidium server
 ```
 
 The server will start and listen on the configured address and port (default: `localhost:8080`).

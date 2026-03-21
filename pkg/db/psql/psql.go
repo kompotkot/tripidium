@@ -146,10 +146,10 @@ func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, use
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
 	`
-	var s iam.AuthSession
+	var as iam.AuthSession
 	err := p.pool.QueryRow(ctx, query, sessionID, userID, familyID, refreshTokenHash, createdIP, createdUserAgent, expiresAt).Scan(
-		&s.ID, &s.UserID, &s.FamilyID, &s.RefreshTokenHash, &s.CreatedIP, &s.CreatedUserAgent,
-		&s.RevokeReason, &s.RevokedAt, &s.CreatedAt, &s.ExpiresAt, &s.ReplacedBy,
+		&as.ID, &as.UserID, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
+		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -166,7 +166,7 @@ func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, use
 
 		return iam.AuthSession{}, err
 	}
-	return s, nil
+	return as, nil
 }
 
 func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
