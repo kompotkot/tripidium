@@ -43,7 +43,7 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("DELETE /auth/sessions", h.AuthSessionsRevokeAll)
 	mux.HandleFunc("DELETE /auth/sessions/{session_id}", h.AuthSessionRevokeOne)
 
-	mux.HandleFunc("GET /user", h.User)
+	mux.Handle("GET /user", s.authMiddleware(http.HandlerFunc(h.GetUser)))
 	mux.HandleFunc("PATCH /user", h.UserPatch)
 	mux.HandleFunc("PUT /user/password", h.UserPasswordPut)
 

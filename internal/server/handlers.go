@@ -25,7 +25,7 @@ type Handlers interface {
 	AuthSessionsRevokeAll(w http.ResponseWriter, r *http.Request)
 	AuthSessionRevokeOne(w http.ResponseWriter, r *http.Request)
 
-	User(w http.ResponseWriter, r *http.Request)
+	GetUser(w http.ResponseWriter, r *http.Request)
 	UserPatch(w http.ResponseWriter, r *http.Request)
 	UserPasswordPut(w http.ResponseWriter, r *http.Request)
 }
@@ -269,8 +269,31 @@ func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) 
 	notImplemented(w)
 }
 
-func (h *handlers) User(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w)
+func (h *handlers) GetUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := authUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.deps.DB.GetUser(r.Context(), userID, "", "")
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("get_user_failed", "user_id", userID, "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	if !user.IsActive {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
 func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {

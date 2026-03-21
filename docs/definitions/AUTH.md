@@ -79,3 +79,38 @@ Auth login flow:
 12. Return JSON response with:
     - `access_token`
     - `refresh_token`
+
+### `GET /user`
+
+Get user flow:
+
+1. Parse `Authorization` header with `Bearer` token.
+2. Reject empty or malformed `Authorization` header.
+3. Parse JWT and allow only the expected signing algorithm `EdDSA`.
+4. Use `kid` from JWT header to select a public key only from the trusted local key set.
+5. Verify JWT signature with the selected public key.
+6. Validate claims:
+   - `typ == access+jwt`
+   - `iss == auth.tripidium`
+   - `aud == api.tripidium`
+   - `exp > now`
+   - `sub` is not empty
+   - `sid` is not empty
+7. Return `401 Unauthorized` when JWT is invalid.
+8. Extract `sub` as `user_id`.
+9. Fetch user from the database by `user_id`.
+10. Verify that the user exists and `is_active = true`.
+11. Return `401` or `403` for missing or inactive user according to the chosen policy.
+12. Return user data.
+
+Implementation split:
+
+- Middleware validates JWT without database access.
+- Middleware stores `user_id`, `session_id`, and `jti` in request context.
+- `GET /user` handler performs one database query to load the user.
+
+Why these claim checks are required:
+
+- `typ` protects against accepting a token of another purpose.
+- `iss` protects against accepting a token from another issuer.
+- `aud` protects against accepting a token minted for another service.

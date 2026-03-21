@@ -1,8 +1,19 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
+
+	"github.com/kompotkot/tripidium/internal/service"
+)
+
+type authContextKey string
+
+const (
+	authUserIDKey    authContextKey = "auth_user_id"
+	authSessionIDKey authContextKey = "auth_session_id"
+	authJTIKey       authContextKey = "auth_jti"
 )
 
 // responseWriter wraps http.ResponseWriter to capture status code and bytes written
@@ -79,4 +90,51 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// authMiddleware validates an access token and stores auth identity in request context
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization := r.Header.Get("Authorization")
+		identity, err := service.ParseAndVerifyAccessTokenFromAuthHeader(authorization, s.deps.Cfg.AuthConfig)
+		if err != nil {
+			s.deps.Log.Info("auth_unauthorized", "path", r.URL.Path, "error", err)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := withAuthIdentity(r.Context(), identity)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func withAuthIdentity(ctx context.Context, identity service.AccessTokenIdentity) context.Context {
+	ctx = context.WithValue(ctx, authUserIDKey, identity.UserID)
+	ctx = context.WithValue(ctx, authSessionIDKey, identity.SessionID)
+	ctx = context.WithValue(ctx, authJTIKey, identity.JTI)
+	return ctx
+}
+
+func authUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(authUserIDKey).(string)
+	if !ok || userID == "" {
+		return "", false
+	}
+	return userID, true
+}
+
+func authSessionIDFromContext(ctx context.Context) (string, bool) {
+	sessionID, ok := ctx.Value(authSessionIDKey).(string)
+	if !ok || sessionID == "" {
+		return "", false
+	}
+	return sessionID, true
+}
+
+func authJTIFromContext(ctx context.Context) (string, bool) {
+	jti, ok := ctx.Value(authJTIKey).(string)
+	if !ok || jti == "" {
+		return "", false
+	}
+	return jti, true
 }
