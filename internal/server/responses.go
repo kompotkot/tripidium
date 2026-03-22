@@ -33,14 +33,12 @@ func ToUserResponse(u iam.User) UserResponse {
 
 // AuthLoginResponse is the HTTP JSON body for login endpoint
 type AuthLoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }
 
 // ToAuthLoginResponse maps to AuthLoginResponse
 func ToAuthLoginResponse(accessToken, refreshToken string) AuthLoginResponse {
 	return AuthLoginResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		AccessToken: accessToken,
 	}
 }

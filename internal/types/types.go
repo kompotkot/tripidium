@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/ed25519"
+	"net/http"
 	"time"
 )
 
@@ -36,6 +37,14 @@ type AuthConfig struct {
 	AccessTokenKid        string
 	AccessTokenTyp        string
 	RefreshTokenLen       int
+
+	// Cookie configuration
+	RefreshTokenCookieName     string
+	RefreshTokenCookieSecure   bool
+	RefreshTokenCookiePath     string
+	RefreshTokenCookieDomain   string
+	RefreshTokenCookieHttpOnly bool
+	RefreshTokenCookieSameSite http.SameSite
 }
 
 // Server configuration

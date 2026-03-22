@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -27,7 +28,7 @@ const (
 
 	// Server defaults
 	DefaultServerAddr           = "localhost"
-	DefaultServerPort           = "8080"
+	DefaultServerPort           = 8080
 	DefaultIsPhoneRequired bool = false
 
 	DefaultCORSAllowedDefaultMethods = "GET,POST,PATCH,PUT,DELETE,OPTIONS"
@@ -49,27 +50,74 @@ const (
 	DefaultAccessTokenKid                    = "ed25519-v1" // TODO(kompotkot): Add rotation of access token kid logic
 	DefaultAccessTokenTyp                    = "access+jwt"
 	DefaultRefreshTokenLen     int           = 32
+
+	DefaultRefreshTokenCookieName          = "__Host-refresh_token"
+	DefaultRefreshTokenCookieSecure   bool = true
+	DefaultRefreshTokenCookiePath          = "/"
+	DefaultRefreshTokenCookieDomain        = "localhost"
+	DefaultRefreshTokenCookieHttpOnly bool = true
+	DefaultRefreshTokenCookieSameSite int  = 2 // 1 = http.SameSiteDefaultMode, 2 = http.SameSiteLaxMode, 3 = http.SameSiteStrictMode, 4 = http.SameSiteNoneMode
 )
+
+func getStringEnv(key, fallback string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func getIntEnv(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+
+	if val, err := strconv.Atoi(v); err != nil {
+		return fallback
+	} else {
+		return val
+	}
+}
+
+func getDurationEnv(key string, fallback time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+
+	if val, err := strconv.Atoi(v); err != nil {
+		return fallback
+	} else {
+		return time.Duration(val) * time.Second
+	}
+}
+
+func getBoolEnv(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+
+	switch v {
+	case "1", "true":
+		return true
+	case "0", "false":
+		return false
+	default:
+		return fallback
+	}
+}
 
 // Load and parse configuration
 // TODO(kompotkot): Re-write based on https://github.com/kelseyhightower/envconfig
 func Load() (*types.Config, error) {
 	var cfg types.Config
 
-	logLevelEnv := os.Getenv("LOG_LEVEL")
-	if logLevelEnv == "" {
-		logLevelEnv = DefaultLoggerLevel
-	}
+	logLevelEnv := getStringEnv("LOG_LEVEL", DefaultLoggerLevel)
+	logFormatEnv := getStringEnv("LOG_FORMAT", DefaultLoggerFormat)
 
-	logFormatEnv := os.Getenv("LOG_FORMAT")
-	if logFormatEnv == "" {
-		logFormatEnv = DefaultLoggerFormat
-	}
-
-	databaseTypeEnv := os.Getenv("DATABASE_TYPE")
-	if databaseTypeEnv == "" {
-		databaseTypeEnv = DefaultDatabaseType
-	}
+	databaseTypeEnv := getStringEnv("DATABASE_TYPE", DefaultDatabaseType)
 
 	databaseURIEnv := os.Getenv("DATABASE_URI")
 	if databaseURIEnv == "" {
@@ -83,43 +131,12 @@ func Load() (*types.Config, error) {
 		}
 	}
 
-	var databaseMaxConns int
-	databaseMaxConnsEnv := os.Getenv("DATABASE_MAX_OPEN_CONNS")
-	if databaseMaxConnsEnv != "" {
-		if val, err := strconv.Atoi(databaseMaxConnsEnv); err != nil {
-			return nil, fmt.Errorf("invalid max open conns: %s, must be a number", databaseMaxConnsEnv)
-		} else {
-			databaseMaxConns = val
-		}
-	} else {
-		databaseMaxConns = DefaultDatabaseMaxConns
-	}
+	databaseMaxConns := getIntEnv("DATABASE_MAX_OPEN_CONNS", DefaultDatabaseMaxConns)
+	databaseConnMaxLifetime := getDurationEnv("DATABASE_CONN_MAX_LIFETIME_SEC", DefaultDatabaseConnMaxLifetime)
 
-	var databaseConnMaxLifetime time.Duration
-	databaseConnMaxLifetimeSecEnv := os.Getenv("DATABASE_CONN_MAX_LIFETIME_SEC")
-	if databaseConnMaxLifetimeSecEnv != "" {
-		if val, err := strconv.Atoi(databaseConnMaxLifetimeSecEnv); err != nil {
-			return nil, fmt.Errorf("invalid conn max lifetime: %s, must be a number", databaseConnMaxLifetimeSecEnv)
-		} else {
-			databaseConnMaxLifetime = time.Duration(val) * time.Second
-		}
-	} else {
-		databaseConnMaxLifetime = DefaultDatabaseConnMaxLifetime
-	}
-
-	serverAddr := os.Getenv("SERVER_ADDR")
-	if serverAddr == "" {
-		serverAddr = DefaultServerAddr
-	}
-
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		serverPort = DefaultServerPort
-	} else {
-		if _, err := strconv.Atoi(serverPort); err != nil {
-			return nil, fmt.Errorf("invalid port: %s, must be a number", serverPort)
-		}
-	}
+	serverAddr := getStringEnv("SERVER_ADDR", DefaultServerAddr)
+	serverPort := getIntEnv("SERVER_PORT", DefaultServerPort)
+	isPhoneRequired := getBoolEnv("SERVER_IS_PHONE_REQUIRED", DefaultIsPhoneRequired)
 
 	serverCORSWhitelistEnv := os.Getenv("SERVER_CORS_WHITELIST")
 	corsWhitelistSls := strings.Split(strings.ReplaceAll(serverCORSWhitelistEnv, " ", ""), ",")
@@ -138,16 +155,9 @@ func Load() (*types.Config, error) {
 		corsWhitelist[valid.String()] = true
 	}
 
-	serverCORSAllowedDefaultMethodsEnv := os.Getenv("SERVER_CORS_ALLOWED_DEFAULT_METHODS")
-	if serverCORSAllowedDefaultMethodsEnv == "" {
-		serverCORSAllowedDefaultMethodsEnv = DefaultCORSAllowedDefaultMethods
-	}
+	serverCORSAllowedDefaultMethodsEnv := getStringEnv("SERVER_CORS_ALLOWED_DEFAULT_METHODS", DefaultCORSAllowedDefaultMethods)
 
-	accessTokenPrivateKeyFilePathEnv := os.Getenv("ACCESS_TOKEN_PRIVATE_KEY_FILE_PATH")
-	if accessTokenPrivateKeyFilePathEnv == "" {
-		accessTokenPrivateKeyFilePathEnv = DefaultAccessTokenPrivateKeyFilePath
-	}
-
+	accessTokenPrivateKeyFilePathEnv := getStringEnv("ACCESS_TOKEN_PRIVATE_KEY_FILE_PATH", DefaultAccessTokenPrivateKeyFilePath)
 	accessTokenPrivateKeyFile, err := os.ReadFile(accessTokenPrivateKeyFilePathEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read access token private key file: %v", err)
@@ -166,17 +176,14 @@ func Load() (*types.Config, error) {
 	}
 
 	var accessSessionTTL time.Duration
-	accessSessionTTLEnv := os.Getenv("ACCESS_SESSION_TTL_SEC")
-	if accessSessionTTLEnv != "" {
-		if val, err := strconv.Atoi(accessSessionTTLEnv); err != nil {
-			fmt.Printf("Ignoring incorrect access session TTL: %s, must be a number", accessSessionTTLEnv)
-			accessSessionTTL = DefaultAccessSessionTTL
-		} else {
-			accessSessionTTL = time.Duration(val) * time.Second
-		}
-	} else {
-		accessSessionTTL = DefaultAccessSessionTTL
-	}
+	accessSessionTTL = getDurationEnv("ACCESS_SESSION_TTL_SEC", DefaultAccessSessionTTL)
+
+	refreshTokenCookieName := getStringEnv("REFRESH_TOKEN_COOKIE_NAME", DefaultRefreshTokenCookieName)
+	refreshTokenCookieSecure := getBoolEnv("REFRESH_TOKEN_COOKIE_SECURE", DefaultRefreshTokenCookieSecure)
+	refreshTokenCookiePath := getStringEnv("REFRESH_TOKEN_COOKIE_PATH", DefaultRefreshTokenCookiePath)
+	refreshTokenCookieDomain := getStringEnv("REFRESH_TOKEN_COOKIE_DOMAIN", DefaultRefreshTokenCookieDomain)
+	refreshTokenCookieHttpOnly := getBoolEnv("REFRESH_TOKEN_COOKIE_HTTP_ONLY", DefaultRefreshTokenCookieHttpOnly)
+	refreshTokenCookieSameSite := getIntEnv("REFRESH_TOKEN_COOKIE_SAMESITE", DefaultRefreshTokenCookieSameSite)
 
 	cfg = types.Config{
 		Logger: types.LoggerConfig{
@@ -191,9 +198,9 @@ func Load() (*types.Config, error) {
 		},
 		Server: types.ServerConfig{
 			Addr: serverAddr,
-			Port: serverPort,
+			Port: fmt.Sprintf("%d", serverPort),
 
-			IsPhoneRequired: DefaultIsPhoneRequired,
+			IsPhoneRequired: isPhoneRequired,
 
 			CORSWhitelist:             corsWhitelist,
 			CORSAllowedDefaultMethods: serverCORSAllowedDefaultMethodsEnv,
@@ -213,6 +220,13 @@ func Load() (*types.Config, error) {
 				AccessTokenKid:        DefaultAccessTokenKid,
 				AccessTokenTyp:        DefaultAccessTokenTyp,
 				RefreshTokenLen:       DefaultRefreshTokenLen,
+
+				RefreshTokenCookieName:     refreshTokenCookieName,
+				RefreshTokenCookieSecure:   refreshTokenCookieSecure,
+				RefreshTokenCookiePath:     refreshTokenCookiePath,
+				RefreshTokenCookieDomain:   refreshTokenCookieDomain,
+				RefreshTokenCookieHttpOnly: refreshTokenCookieHttpOnly,
+				RefreshTokenCookieSameSite: http.SameSite(refreshTokenCookieSameSite),
 			},
 		},
 	}

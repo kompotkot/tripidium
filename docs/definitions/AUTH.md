@@ -59,7 +59,7 @@ Auth login flow:
 3. Validate provided `username` and/or `email`, and validate `password`.
 4. Load the user by `username` or `email`.
 5. Verify password against `user.password_hash`.
-6. Generate refresh token pair: raw token for response and SHA-256 hash for persistence.
+6. Generate refresh token pair: raw token for cookie and SHA-256 hash for persistence.
 7. Parse client metadata:
    - `created_ip` from `r.RemoteAddr` (host part if `host:port`)
    - `created_user_agent` from `r.UserAgent()` when present
@@ -76,9 +76,21 @@ Auth login flow:
     - `created_user_agent`
     - `expires_at`
 11. Issue access JWT for `user_id` and `session_id`.
-12. Return JSON response with:
+12. Set refresh token cookie with configured:
+    - `name`
+    - `path`
+    - `domain`
+    - `expires`
+    - `HttpOnly`
+    - `Secure`
+    - `SameSite`
+13. Return JSON response with:
     - `access_token`
-    - `refresh_token`
+
+Current implementation note:
+
+- refresh token is delivered via cookie, not via JSON body
+- login response body contains `access_token` only
 
 ### `GET /user`
 
@@ -114,3 +126,90 @@ Why these claim checks are required:
 - `typ` protects against accepting a token of another purpose.
 - `iss` protects against accepting a token from another issuer.
 - `aud` protects against accepting a token minted for another service.
+
+### `POST /auth/refresh`
+
+Refresh must be based on refresh token only, not on access JWT, because the access token may already be expired at refresh time.
+
+Preferred transport:
+
+- read refresh token from `HttpOnly` cookie
+- use `Secure` in production
+- set explicit `SameSite` policy
+
+Auth refresh flow:
+
+1. Read refresh token from request, preferably from `HttpOnly` cookie.
+2. Do not require access token for this endpoint.
+3. Validate refresh token format:
+   - token is not empty
+   - token has expected length
+   - token is valid base64url if that is the chosen encoding
+4. Compute `refresh_token_hash = SHA-256(raw_refresh_token)`.
+5. Open database transaction.
+6. Find `auth_session` by `refresh_token_hash` and lock the row with `FOR UPDATE`.
+7. Return `401 Unauthorized` if session is not found.
+8. Check whether the session is already revoked.
+9. If `revoked_at IS NOT NULL`, treat the token as invalid:
+   - this may indicate refresh token reuse after rotation
+   - revoke the whole token family by `family_id`
+   - return `401 Unauthorized`
+10. If `expires_at <= now()`, return `401 Unauthorized`.
+11. Optionally mark expired session as revoked with reason `expired`.
+12. Load user by `user_id`.
+13. Verify that the user exists and `is_active = true`.
+14. Return `401` or `403` according to the selected policy if the user is missing or inactive.
+15. Generate a new refresh token pair:
+   - new raw refresh token for cookie
+   - new refresh token hash
+16. Generate new `session_id`.
+17. Keep the previous `family_id`.
+18. Mark the old session as rotated:
+   - `revoked_at = now`
+   - `revoke_reason = 'rotated'`
+   - `replaced_by = new_session_id`
+19. Create new `auth_session`:
+   - `id = new_session_id`
+   - `user_id = old.user_id`
+   - `family_id = old.family_id`
+   - `refresh_token_hash = new_hash`
+   - `created_ip = current IP`
+   - `created_user_agent = current User-Agent`
+   - `expires_at = now + refresh/session TTL`
+   - `created_at = now`
+20. Issue new access JWT:
+   - `sub = user_id`
+   - `sid = new_session_id`
+   - new `jti`
+   - new `iat` and `exp`
+21. Set refreshed cookie with configured:
+   - `name`
+   - `path`
+   - `domain`
+   - `expires`
+   - `HttpOnly`
+   - `Secure`
+   - `SameSite`
+22. Commit transaction.
+23. Return JSON response with:
+   - `access_token`
+
+Refresh rotation rules:
+
+- every successful refresh must issue a new refresh token
+- previous refresh token must be invalidated
+- token lineage must be preserved through `family_id` and `replaced_by`
+- refreshed raw token should be returned via cookie, not via JSON body
+
+Reuse detection:
+
+- if a presented refresh token is found but already revoked, and it belongs to a rotated chain, treat the whole `family_id` as compromised
+- revoke all active sessions in the same family
+- return `401 Unauthorized`
+- require full login again
+
+Minimal status policy:
+
+- `401 Unauthorized` for token not found, expired, revoked, or reuse detected
+- `403 Forbidden` for inactive user, if the API chooses to distinguish this case
+- alternatively inactive user can also be mapped to `401` to avoid leaking details

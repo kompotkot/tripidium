@@ -245,12 +245,29 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.deps.Cfg.AuthConfig.RefreshTokenCookieName,
+		Value:    refreshToken,
+		Path:     h.deps.Cfg.AuthConfig.RefreshTokenCookiePath,
+		Domain:   h.deps.Cfg.AuthConfig.RefreshTokenCookieDomain,
+		Expires:  expiresAt,
+		HttpOnly: h.deps.Cfg.AuthConfig.RefreshTokenCookieHttpOnly,
+		Secure:   h.deps.Cfg.AuthConfig.RefreshTokenCookieSecure,
+		SameSite: h.deps.Cfg.AuthConfig.RefreshTokenCookieSameSite,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, refreshToken))
+	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, ""))
 }
 
-func (h *handlers) AuthRefresh(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
+	_, err := r.Cookie(h.deps.Cfg.AuthConfig.RefreshTokenCookieName)
+	if err != nil {
+		http.Error(w, "missing refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	h.deps.Log.Info("refresh token cookie found")
 }
 
 func (h *handlers) AuthLogout(w http.ResponseWriter, _ *http.Request) {
