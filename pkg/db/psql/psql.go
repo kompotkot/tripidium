@@ -178,11 +178,163 @@ func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passw
 }
 
 func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+	const query = `
+		SELECT id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+		FROM auth_sessions
+		WHERE id = $1
+	`
+
+	var as iam.AuthSession
+	err := p.pool.QueryRow(ctx, query, sessionID).Scan(
+		&as.ID, &as.UserID, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
+		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.AuthSession{}, db.ErrTokenNotFound
+		}
+		return iam.AuthSession{}, err
+	}
+	return as, nil
 }
 
 func (p *PsqlDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+	const query = `
+		SELECT id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+		FROM auth_sessions
+		WHERE refresh_token_hash = $1
+	`
+
+	var as iam.AuthSession
+	err := p.pool.QueryRow(ctx, query, refreshTokenHash).Scan(
+		&as.ID, &as.UserID, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
+		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.AuthSession{}, db.ErrTokenNotFound
+		}
+		return iam.AuthSession{}, err
+	}
+	return as, nil
+}
+
+func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return iam.AuthSession{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	const selectForUpdateQuery = `
+		SELECT id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+		FROM auth_sessions
+		WHERE refresh_token_hash = $1
+		FOR UPDATE
+	`
+
+	var oldSession iam.AuthSession
+	err = tx.QueryRow(ctx, selectForUpdateQuery, oldRefreshTokenHash).Scan(
+		&oldSession.ID, &oldSession.UserID, &oldSession.FamilyID, &oldSession.RefreshTokenHash, &oldSession.CreatedIP, &oldSession.CreatedUserAgent,
+		&oldSession.RevokeReason, &oldSession.RevokedAt, &oldSession.CreatedAt, &oldSession.ExpiresAt, &oldSession.ReplacedBy,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.AuthSession{}, db.ErrTokenNotFound
+		}
+		return iam.AuthSession{}, err
+	}
+
+	// Check if the session is revoked
+
+	if oldSession.RevokedAt != nil {
+		const revokeFamilyQuery = `
+			UPDATE auth_sessions
+			SET revoked_at = NOW(), revoke_reason = 'reuse_detected'
+			WHERE family_id = $1 AND revoked_at IS NULL
+		`
+		if _, err = tx.Exec(ctx, revokeFamilyQuery, oldSession.FamilyID); err != nil {
+			return iam.AuthSession{}, err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return iam.AuthSession{}, err
+		}
+		return iam.AuthSession{}, db.ErrTokenReuseDetected
+	}
+
+	// Check if the session is expired
+
+	now := time.Now().UTC()
+	if !oldSession.ExpiresAt.After(now) {
+		const markExpiredQuery = `
+			UPDATE auth_sessions
+			SET revoked_at = NOW(), revoke_reason = 'expired'
+			WHERE id = $1 AND revoked_at IS NULL
+		`
+		if _, err = tx.Exec(ctx, markExpiredQuery, oldSession.ID); err != nil {
+			return iam.AuthSession{}, err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return iam.AuthSession{}, err
+		}
+		return iam.AuthSession{}, db.ErrTokenExpired
+	}
+
+	// Check if the user is active
+
+	const checkActiveUserQuery = `
+		SELECT is_active
+		FROM users
+		WHERE id = $1
+	`
+	var isUserActive bool
+	err = tx.QueryRow(ctx, checkActiveUserQuery, oldSession.UserID).Scan(&isUserActive)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.AuthSession{}, db.ErrUserNotFound
+		}
+		return iam.AuthSession{}, err
+	}
+	if !isUserActive {
+		return iam.AuthSession{}, db.ErrUserNotFound
+	}
+
+	// Create a new session
+
+	const createNewSessionQuery = `
+		INSERT INTO auth_sessions (id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+	`
+	var newSession iam.AuthSession
+	err = tx.QueryRow(ctx, createNewSessionQuery, newSessionID, oldSession.UserID, oldSession.FamilyID, newRefreshTokenHash, createdIP, createdUserAgent, expiresAt).Scan(
+		&newSession.ID, &newSession.UserID, &newSession.FamilyID, &newSession.RefreshTokenHash, &newSession.CreatedIP, &newSession.CreatedUserAgent,
+		&newSession.RevokeReason, &newSession.RevokedAt, &newSession.CreatedAt, &newSession.ExpiresAt, &newSession.ReplacedBy,
+	)
+	if err != nil {
+		return iam.AuthSession{}, err
+	}
+
+	// Revoke the old session
+
+	const revokeRotatedQuery = `
+		UPDATE auth_sessions
+		SET revoked_at = NOW(), revoke_reason = 'rotated', replaced_by = $2
+		WHERE id = $1 AND revoked_at IS NULL
+	`
+	tag, err := tx.Exec(ctx, revokeRotatedQuery, oldSession.ID, newSessionID)
+	if err != nil {
+		return iam.AuthSession{}, err
+	}
+	if tag.RowsAffected() != 1 {
+		return iam.AuthSession{}, db.ErrTokenNotFound
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return iam.AuthSession{}, err
+	}
+
+	return newSession, nil
 }
 
 func (p *PsqlDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {

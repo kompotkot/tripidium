@@ -261,13 +261,73 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
-	_, err := r.Cookie(h.deps.Cfg.AuthConfig.RefreshTokenCookieName)
+	cookie, err := r.Cookie(h.deps.Cfg.AuthConfig.RefreshTokenCookieName)
 	if err != nil {
 		http.Error(w, "missing refresh token", http.StatusUnauthorized)
 		return
 	}
 
-	h.deps.Log.Info("refresh token cookie found")
+	// Validate length of refresh token and get hash
+
+	refreshToken, err := service.ValidateLengthOfRefreshToken(cookie.Value, h.deps.Cfg.AuthConfig)
+	if err != nil {
+		http.Error(w, "invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	refreshTokenHash := service.HashRefreshToken(refreshToken)
+
+	clientIP := r.RemoteAddr
+	if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
+		clientIP = host
+	}
+
+	userAgentRaw := r.UserAgent()
+	var userAgent *string
+	if userAgentRaw != "" {
+		userAgent = &userAgentRaw
+	}
+
+	newSessionID := uuid.New()
+	expiresAt := time.Now().UTC().Add(h.deps.Cfg.AuthConfig.AccessSessionTTL)
+	newRefreshToken, newRefreshTokenHash, err := service.CreateRefreshTokenPair(h.deps.Cfg.AuthConfig)
+	if err != nil {
+		h.deps.Log.Error("refresh_token_create_failed", "error", err)
+		http.Error(w, "Failed to create refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	newSession, err := h.deps.DB.RefreshAuthSession(r.Context(), refreshTokenHash, newSessionID, newRefreshTokenHash, clientIP, userAgent, expiresAt)
+	if err != nil {
+		if errors.Is(err, db.ErrTokenNotFound) || errors.Is(err, db.ErrTokenExpired) || errors.Is(err, db.ErrTokenReuseDetected) || errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("refresh_rotate_session_failed", "error", err)
+		http.Error(w, "Failed to rotate auth session", http.StatusInternalServerError)
+		return
+	}
+
+	accessToken, err := service.CreateAccessToken(newSession.UserID, newSession.ID, h.deps.Cfg.AuthConfig)
+	if err != nil {
+		h.deps.Log.Error("refresh_access_token_create_failed", "error", err)
+		http.Error(w, "Failed to create access token", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.deps.Cfg.AuthConfig.RefreshTokenCookieName,
+		Value:    newRefreshToken,
+		Path:     h.deps.Cfg.AuthConfig.RefreshTokenCookiePath,
+		Domain:   h.deps.Cfg.AuthConfig.RefreshTokenCookieDomain,
+		Expires:  expiresAt,
+		HttpOnly: h.deps.Cfg.AuthConfig.RefreshTokenCookieHttpOnly,
+		Secure:   h.deps.Cfg.AuthConfig.RefreshTokenCookieSecure,
+		SameSite: h.deps.Cfg.AuthConfig.RefreshTokenCookieSameSite,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, ""))
 }
 
 func (h *handlers) AuthLogout(w http.ResponseWriter, _ *http.Request) {

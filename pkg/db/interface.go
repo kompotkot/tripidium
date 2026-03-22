@@ -37,6 +37,8 @@ type Database interface {
 	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error)
 	// GetAuthSessionByRefreshToken returns a session by refresh token hash
 	GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error)
+	// RefreshAuthSession atomically rotates a refresh-token session and returns new session
+	RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
 	// ListAuthSessions returns all sessions for a user
 	ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error)
 	// RevokeAuthSession revokes one session, optionally marking it replaced by another

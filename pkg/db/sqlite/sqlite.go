@@ -119,6 +119,10 @@ func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshToke
 	return iam.AuthSession{}, nil
 }
 
+func (s *SqliteDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
+	return iam.AuthSession{}, nil
+}
+
 func (s *SqliteDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {
 	return nil, nil
 }

@@ -253,6 +253,35 @@ func ParseAndVerifyAccessTokenFromAuthHeader(authorizationHeader string, authCon
 	return VerifyAccessToken(rawToken, authConfig)
 }
 
+// ValidateLengthOfRefreshToken validates an opaque refresh token received from cookie
+func ValidateLengthOfRefreshToken(refreshTokenRaw string, authConfig types.AuthConfig) (string, error) {
+	refreshToken := strings.TrimSpace(refreshTokenRaw)
+	if refreshToken == "" {
+		return "", fmt.Errorf("%w: empty refresh token", ErrUnauthorized)
+	}
+
+	expectedLen := base64.RawURLEncoding.EncodedLen(authConfig.RefreshTokenLen)
+	if len(refreshToken) != expectedLen {
+		return "", fmt.Errorf("%w: invalid refresh token length", ErrUnauthorized)
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(refreshToken)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid refresh token encoding", ErrUnauthorized)
+	}
+	if len(decoded) != authConfig.RefreshTokenLen {
+		return "", fmt.Errorf("%w: invalid refresh token payload length", ErrUnauthorized)
+	}
+
+	return refreshToken, nil
+}
+
+// HashRefreshToken computes DB-safe SHA-256 hash of an opaque refresh token
+func HashRefreshToken(refreshToken string) string {
+	sum := sha256.Sum256([]byte(refreshToken))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
 // CreateAccessToken creates and signs a short-lived JWT access token
 func CreateAccessToken(userID, sessionID uuid.UUID, authConfig types.AuthConfig) (string, error) {
 	now := time.Now().UTC()
@@ -287,7 +316,6 @@ func CreateRefreshTokenPair(authConfig types.AuthConfig) (refreshToken string, r
 	}
 
 	refreshToken = base64.RawURLEncoding.EncodeToString(raw)
-	sum := sha256.Sum256([]byte(refreshToken))
-	refreshTokenHash = base64.RawURLEncoding.EncodeToString(sum[:])
+	refreshTokenHash = HashRefreshToken(refreshToken)
 	return refreshToken, refreshTokenHash, nil
 }
