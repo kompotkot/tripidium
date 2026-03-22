@@ -330,8 +330,44 @@ func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, ""))
 }
 
-func (h *handlers) AuthLogout(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
+	userID, ok := authUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	sessionIDRaw, ok := authSessionIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	sessionID, err := uuid.Parse(sessionIDRaw)
+	if err != nil {
+		h.deps.Log.Error("logout_invalid_session_id", "user_id", userID, "session_id", sessionIDRaw, "error", err)
+		http.Error(w, "Invalid session id", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.RevokeAuthSession(r.Context(), sessionID, "logout", nil); err != nil {
+		h.deps.Log.Error("logout_revoke_session_failed", "user_id", userID, "session_id", sessionIDRaw, "error", err)
+		http.Error(w, "Failed to revoke auth session", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.deps.Cfg.AuthConfig.RefreshTokenCookieName,
+		Value:    "",
+		Path:     h.deps.Cfg.AuthConfig.RefreshTokenCookiePath,
+		Domain:   h.deps.Cfg.AuthConfig.RefreshTokenCookieDomain,
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: h.deps.Cfg.AuthConfig.RefreshTokenCookieHttpOnly,
+		Secure:   h.deps.Cfg.AuthConfig.RefreshTokenCookieSecure,
+		SameSite: h.deps.Cfg.AuthConfig.RefreshTokenCookieSameSite,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handlers) AuthSessionsList(w http.ResponseWriter, _ *http.Request) {

@@ -213,3 +213,46 @@ Minimal status policy:
 - `401 Unauthorized` for token not found, expired, revoked, or reuse detected
 - `403 Forbidden` for inactive user, if the API chooses to distinguish this case
 - alternatively inactive user can also be mapped to `401` to avoid leaking details
+
+### `POST /auth/logout`
+
+Logout should do both:
+
+- revoke the current refresh-backed session on the server
+- clear refresh cookie on the client
+
+Why both are required:
+
+- deleting only the cookie is not enough, because the server-side session could still remain usable
+- revoking only the database row is not enough, because the browser would still keep sending the stale cookie
+
+Auth logout flow:
+
+1. User `POST /auth/logout` with access-token middleware.
+2. Validate current access JWT using the same access-token checks as `GET /user`.
+3. Read current claims from request context:
+   - `sub`
+   - `sid`
+4. Use `sid` as the identifier of the current `auth_session`.
+5. Revoke this session in the database:
+   - `revoked_at = now`
+   - `revoke_reason = 'logout'`
+6. Make logout idempotent:
+   - if the session is already revoked, still return success
+7. Clear refresh cookie with `Set-Cookie`.
+8. Use the same cookie attributes that were used during login/refresh:
+   - `Name`
+   - `Path`
+   - `Domain`
+   - `SameSite`
+   - `Secure`
+   - `HttpOnly`
+9. Remove cookie with `Max-Age=0` or an `Expires` value in the past.
+10. Return `204 No Content`.
+11. Client should discard access token from memory after successful logout.
+
+Access token behavior after logout:
+
+- access JWT is stateless, so an already issued access token may remain valid until `exp`
+- this is acceptable when access-token TTL is short
+- immediate access-token invalidation would require checking session state by `sid` on every request

@@ -11,7 +11,7 @@ Basic service endpoints used for availability checks, time diagnostics, and buil
 
 Endpoints for user authentication, token rotation, logout, and session management.
 
-- `POST /auth/signup` - **Create account**. Registers a new user account. Args: `username`, `email`, `password`, `phone` (optional).
+- `POST /auth/signup` - **Create account**. Registers a new user account. Args: `username`, `email`, `password`, `password_confirmation`, `phone` (optional).
 - `POST /auth/login` - **Sign in**. Authenticates the user and issues access and refresh tokens. Args: `email`/`username`, `password`.
 - `POST /auth/refresh` - **Rotate tokens**. Validates the refresh token and issues a new token pair.
 - `POST /auth/logout` - **Logout current session**. Revokes the current authenticated session.

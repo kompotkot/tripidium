@@ -38,7 +38,7 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("POST /auth/signup", h.AuthSignUp)
 	mux.HandleFunc("POST /auth/login", h.AuthLogin)
 	mux.HandleFunc("POST /auth/refresh", h.AuthRefresh)
-	mux.HandleFunc("POST /auth/logout", h.AuthLogout)
+	mux.Handle("POST /auth/logout", s.authMiddleware(http.HandlerFunc(h.AuthLogout)))
 	mux.HandleFunc("GET /auth/sessions", h.AuthSessionsList)
 	mux.HandleFunc("DELETE /auth/sessions", h.AuthSessionsRevokeAll)
 	mux.HandleFunc("DELETE /auth/sessions/{session_id}", h.AuthSessionRevokeOne)

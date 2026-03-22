@@ -342,7 +342,16 @@ func (p *PsqlDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.
 }
 
 func (p *PsqlDB) RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error {
-	return nil
+	const query = `
+		UPDATE auth_sessions
+		SET
+			revoked_at = COALESCE(revoked_at, NOW()),
+			revoke_reason = COALESCE(revoke_reason, $2),
+			replaced_by = COALESCE(replaced_by, $3)
+		WHERE id = $1
+	`
+	_, err := p.pool.Exec(ctx, query, sessionID, reason, replacedBy)
+	return err
 }
 
 func (p *PsqlDB) RevokeAllAuthSessions(ctx context.Context, userID uuid.UUID) error {
