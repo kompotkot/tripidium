@@ -228,7 +228,7 @@ Why both are required:
 
 Auth logout flow:
 
-1. User `POST /auth/logout` with access-token middleware.
+1. Use `POST /auth/logout` with access-token middleware.
 2. Validate current access JWT using the same access-token checks as `GET /user`.
 3. Read current claims from request context:
    - `sub`
@@ -256,3 +256,40 @@ Access token behavior after logout:
 - access JWT is stateless, so an already issued access token may remain valid until `exp`
 - this is acceptable when access-token TTL is short
 - immediate access-token invalidation would require checking session state by `sid` on every request
+
+### `GET /auth/sessions`
+
+This endpoint returns active sessions of the currently authenticated user only.
+
+Recommended flow:
+
+1. Use `GET /auth/sessions` with access-token middleware.
+2. Validate access JWT using the standard access-token checks.
+3. Read claims from request context:
+   - `sub` as `user_id`
+   - `sid` as current session ID
+4. Do not accept arbitrary `user_id` from request parameters.
+5. Query database only for sessions of the authenticated user.
+6. Return only sessions that are still active:
+   - `revoked_at IS NULL`
+   - `expires_at > now()`
+7. Mark the current session with `is_current = (session.id == sid)`.
+8. Return metadata-only response.
+
+Safe response fields:
+
+- `id`
+- `is_current`
+- `created_at`
+- `expires_at`
+- `user_agent` in normalized form
+- `ip`
+
+Fields that must not be returned:
+
+- `refresh_token_hash`
+- raw refresh token
+- `family_id`
+- `replaced_by`
+- revoke reasons and internal service fields
+- unnecessary security metadata

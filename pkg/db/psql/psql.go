@@ -338,7 +338,37 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 }
 
 func (p *PsqlDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {
-	return nil, nil
+	const query = `
+		SELECT id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
+		FROM auth_sessions
+		WHERE user_id = $1
+			AND revoked_at IS NULL
+			AND expires_at > NOW()
+		ORDER BY created_at DESC
+	`
+
+	rows, err := p.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := make([]iam.AuthSession, 0)
+	for rows.Next() {
+		var as iam.AuthSession
+		if err := rows.Scan(
+			&as.ID, &as.UserID, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
+			&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
+		); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, as)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return sessions, nil
 }
 
 func (p *PsqlDB) RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error {

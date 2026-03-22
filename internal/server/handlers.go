@@ -370,8 +370,34 @@ func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handlers) AuthSessionsList(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
+	userIDRaw, ok := authUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	currentSessionID, ok := authSessionIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDRaw)
+	if err != nil {
+		h.deps.Log.Error("sessions_invalid_user_id", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Invalid user id", http.StatusInternalServerError)
+		return
+	}
+
+	sessions, err := h.deps.DB.ListAuthSessions(r.Context(), userID)
+	if err != nil {
+		h.deps.Log.Error("sessions_list_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to list sessions", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToAuthSessionsResponse(sessions, currentSessionID))
 }
 
 func (h *handlers) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request) {
