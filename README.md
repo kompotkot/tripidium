@@ -1,5 +1,7 @@
 # tripidium
 
+**Important: WIP**
+
 A lightweight REST API server template with authentication basic functionality built in Go.
 
 ![logo](img/logo.png)
