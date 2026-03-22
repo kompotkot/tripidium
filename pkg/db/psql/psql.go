@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,10 +171,63 @@ func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, use
 }
 
 func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
-	return iam.User{}, nil
+	phoneNumber := 0
+	if strings.TrimSpace(phone) != "" {
+		parsedPhone, err := strconv.Atoi(phone)
+		if err != nil {
+			return iam.User{}, fmt.Errorf("failed to parse phone: %w", err)
+		}
+		phoneNumber = parsedPhone
+	}
+
+	const query = `
+		UPDATE users
+		SET username = $2, email = $3, phone = $4
+		WHERE id = $1
+		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
+	`
+
+	var user iam.User
+	err := p.pool.QueryRow(ctx, query, userID, username, email, phoneNumber).Scan(
+		&user.ID,
+		&user.IsActive,
+		&user.Username,
+		&user.Email,
+		&user.Phone,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return iam.User{}, db.ErrUserNotFound
+		}
+
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23505" { // unique_violation
+				return iam.User{}, db.ErrUserAlreadyExists
+			}
+		}
+
+		return iam.User{}, err
+	}
+	return user, nil
 }
 
 func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	const query = `
+		UPDATE users
+		SET password_hash = $2
+		WHERE id = $1
+	`
+	tag, err := p.pool.Exec(ctx, query, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrUserNotFound
+	}
 	return nil
 }
 

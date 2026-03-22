@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -435,10 +436,173 @@ func (h *handlers) GetUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
-func (h *handlers) UserPatch(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) UserPatch(w http.ResponseWriter, r *http.Request) {
+	userIDRaw, ok := authUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.deps.Log.Error("user_patch_parse_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
+		return
+	}
+
+	currentUser, err := h.deps.DB.GetUser(r.Context(), userIDRaw, "", "")
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("user_patch_get_user_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	if !currentUser.IsActive {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	username := currentUser.Username
+	email := currentUser.Email
+	phone := currentUser.Phone
+
+	if _, provided := r.Form["username"]; provided {
+		username, err = service.ValidateUsername(r.FormValue("username"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if _, provided := r.Form["email"]; provided {
+		email, err = service.ValidateEmail(r.FormValue("email"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if _, provided := r.Form["phone"]; provided {
+		phone, err = service.ValidatePhone(r.FormValue("phone"), h.deps.Cfg.IsPhoneRequired)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	if _, hasUsername := r.Form["username"]; !hasUsername {
+		if _, hasEmail := r.Form["email"]; !hasEmail {
+			if _, hasPhone := r.Form["phone"]; !hasPhone {
+				http.Error(w, "At least one field must be provided", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	phoneValue := ""
+	if phone != 0 {
+		phoneValue = strconv.Itoa(phone)
+	}
+
+	updatedUser, err := h.deps.DB.UpdateUser(r.Context(), currentUser.ID, username, email, phoneValue)
+	if err != nil {
+		if errors.Is(err, db.ErrUserAlreadyExists) {
+			http.Error(w, "Username or email already exists", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("user_patch_update_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to update user", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ToUserResponse(updatedUser))
 }
 
-func (h *handlers) UserPasswordPut(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
+	userIDRaw, ok := authUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.deps.Log.Error("user_password_parse_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
+		return
+	}
+
+	currentPasswordRaw := r.FormValue("current_password")
+	newPasswordRaw := r.FormValue("new_password")
+	if currentPasswordRaw == "" || newPasswordRaw == "" {
+		http.Error(w, "Current password and new password are required", http.StatusBadRequest)
+		return
+	}
+
+	currentPassword, err := service.ValidatePassword(currentPasswordRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	newPassword, err := service.ValidatePassword(newPasswordRaw)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.deps.DB.GetUser(r.Context(), userIDRaw, "", "")
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("user_password_get_user_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	if !user.IsActive {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ok, err = service.VerifyPassword(currentPassword, user.PasswordHash, h.deps.Cfg.AuthConfig)
+	if err != nil {
+		h.deps.Log.Error("user_password_verify_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to verify current password", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "Current password is incorrect", http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := service.HashPassword(newPassword, h.deps.Cfg.AuthConfig)
+	if err != nil {
+		h.deps.Log.Error("user_password_hash_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to hash new password", http.StatusInternalServerError)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDRaw)
+	if err != nil {
+		h.deps.Log.Error("user_password_user_id_parse_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Invalid user id", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.UpdateUserPassword(r.Context(), userID, passwordHash); err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("user_password_update_failed", "user_id", userIDRaw, "error", err)
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

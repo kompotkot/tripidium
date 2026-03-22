@@ -44,8 +44,8 @@ func (s *Server) BuildCommonHandler() *http.Handler {
 	mux.HandleFunc("DELETE /auth/sessions/{session_id}", h.AuthSessionRevokeOne)
 
 	mux.Handle("GET /user", s.authMiddleware(http.HandlerFunc(h.GetUser)))
-	mux.HandleFunc("PATCH /user", h.UserPatch)
-	mux.HandleFunc("PUT /user/password", h.UserPasswordPut)
+	mux.Handle("PATCH /user", s.authMiddleware(http.HandlerFunc(h.UserPatch)))
+	mux.Handle("PUT /user/password", s.authMiddleware(http.HandlerFunc(h.UserPasswordPut)))
 
 	commonHandler := s.loggerMiddleware(mux)
 	commonHandler = s.corsMiddleware(commonHandler)
