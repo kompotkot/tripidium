@@ -23,4 +23,4 @@ EXPOSE 8080
 
 USER app
 
-ENTRYPOINT ["/app/tripidium", "server"]
+CMD ["/app/tripidium"]
