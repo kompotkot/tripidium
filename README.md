@@ -8,22 +8,25 @@ A lightweight REST API server template with authentication basic functionality b
 
 ## Quick Start
 
-Build the application:
-
 ```bash
+# Build the application:
 go build -tags sqlite -o tripidium ./cmd/tripidium
-```
 
-Run the server:
+# Prepare access token private key:
+./tripidium token
 
-```bash
+# Set environment variables:
+vim .env
+
+# Run the server:
 ./tripidium server
 ```
 
-The server will start and listen on the configured address and port (default: `localhost:8080`).
+The server will start and listen on the configured address and port (default: `localhost:8020`).
 
 ## Documentation
 
-- [Architecture](docs/definitions/ARCHITECTURE.md) for project structure details.
-- [Endpoints](docs/definitions/ENDPOINTS.md) of server.
-- [Requirements](docs/definitions/REQUIREMENTS.mdd) for project requirements, available environment variables ,etc.
+- [Auth](docs/definitions/AUTH.md)
+- [Endpoints](docs/definitions/ENDPOINTS.md) of server
+- [Requirements](docs/definitions/REQUIREMENTS.md) for project requirements, available environment variables, etc
+- [Structure](docs/definitions/STRUCTURE.md) for project structure details
