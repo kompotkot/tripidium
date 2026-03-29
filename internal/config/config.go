@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/ed25519"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -41,8 +42,6 @@ const (
 	DefaultSaltLen      int    = 16
 
 	// JWT defaults
-	DefaultAccessTokenPrivateKeyFilePath = "access_token_private_key.pem"
-
 	DefaultAccessSessionTTL    time.Duration = 7 * 24 * time.Hour
 	DefaultAccessTokenTTL      time.Duration = 5 * time.Minute
 	DefaultAccessTokenIssuer                 = "auth.tripidium"
@@ -157,12 +156,29 @@ func Load() (*types.Config, error) {
 
 	serverCORSAllowedDefaultMethodsEnv := getStringEnv("SERVER_CORS_ALLOWED_DEFAULT_METHODS", DefaultCORSAllowedDefaultMethods)
 
-	accessTokenPrivateKeyFilePathEnv := getStringEnv("ACCESS_TOKEN_PRIVATE_KEY_FILE_PATH", DefaultAccessTokenPrivateKeyFilePath)
-	accessTokenPrivateKeyFile, err := os.ReadFile(accessTokenPrivateKeyFilePathEnv)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read access token private key file: %v", err)
+	var accessTokenPrivateKeyRaw []byte
+	var err error
+	accessTokenPrivateKeyFilePathEnv := getStringEnv("ACCESS_TOKEN_PRIVATE_KEY_FILE_PATH", "")
+	if accessTokenPrivateKeyFilePathEnv != "" {
+		accessTokenPrivateKeyRaw, err = os.ReadFile(accessTokenPrivateKeyFilePathEnv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read access token private key file: %v", err)
+		}
+	} else {
+		accessTokenPrivateKeyEnv := getStringEnv("ACCESS_TOKEN_PRIVATE_KEY", "")
+		if accessTokenPrivateKeyEnv != "" {
+			accessTokenPrivateKeyRaw, err = base64.StdEncoding.DecodeString(accessTokenPrivateKeyEnv)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode base64 access token private key: %v", err)
+			}
+		}
 	}
-	block, _ := pem.Decode(accessTokenPrivateKeyFile)
+
+	if len(accessTokenPrivateKeyRaw) == 0 {
+		return nil, fmt.Errorf("access token private key is not set")
+	}
+
+	block, _ := pem.Decode(accessTokenPrivateKeyRaw)
 	if block == nil {
 		return nil, fmt.Errorf("failed to decode PEM access token private key")
 	}
@@ -170,13 +186,19 @@ func Load() (*types.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse PKCS#8 access token private key: %v", err)
 	}
+
 	accessTokenPrivateKey, ok := parsedPrivateKey.(ed25519.PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("access token private key is not ed25519")
 	}
 
-	var accessSessionTTL time.Duration
-	accessSessionTTL = getDurationEnv("ACCESS_SESSION_TTL_SEC", DefaultAccessSessionTTL)
+	accessSessionTTL := getDurationEnv("ACCESS_SESSION_TTL_SEC", DefaultAccessSessionTTL)
+	accessTokenTTL := getDurationEnv("ACCESS_TOKEN_TTL_SEC", DefaultAccessTokenTTL)
+	accessTokenIssuer := getStringEnv("ACCESS_TOKEN_ISSUER", DefaultAccessTokenIssuer)
+	accessTokenAudience := getStringEnv("ACCESS_TOKEN_AUDIENCE", DefaultAccessTokenAudience)
+	accessTokenKid := getStringEnv("ACCESS_TOKEN_KID", DefaultAccessTokenKid)
+	accessTokenTyp := getStringEnv("ACCESS_TOKEN_TYP", DefaultAccessTokenTyp)
+	refreshTokenLen := getIntEnv("REFRESH_TOKEN_LEN", DefaultRefreshTokenLen)
 
 	refreshTokenCookieName := getStringEnv("REFRESH_TOKEN_COOKIE_NAME", DefaultRefreshTokenCookieName)
 	refreshTokenCookieSecure := getBoolEnv("REFRESH_TOKEN_COOKIE_SECURE", DefaultRefreshTokenCookieSecure)
@@ -214,12 +236,12 @@ func Load() (*types.Config, error) {
 
 				AccessSessionTTL:      accessSessionTTL,
 				AccessTokenPrivateKey: accessTokenPrivateKey,
-				AccessTokenTTL:        DefaultAccessTokenTTL,
-				AccessTokenIssuer:     DefaultAccessTokenIssuer,
-				AccessTokenAudience:   DefaultAccessTokenAudience,
-				AccessTokenKid:        DefaultAccessTokenKid,
-				AccessTokenTyp:        DefaultAccessTokenTyp,
-				RefreshTokenLen:       DefaultRefreshTokenLen,
+				AccessTokenTTL:        accessTokenTTL,
+				AccessTokenIssuer:     accessTokenIssuer,
+				AccessTokenAudience:   accessTokenAudience,
+				AccessTokenKid:        accessTokenKid,
+				AccessTokenTyp:        accessTokenTyp,
+				RefreshTokenLen:       refreshTokenLen,
 
 				RefreshTokenCookieName:     refreshTokenCookieName,
 				RefreshTokenCookieSecure:   refreshTokenCookieSecure,
