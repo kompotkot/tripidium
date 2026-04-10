@@ -56,8 +56,8 @@ func (p *PsqlDB) Close() error {
 func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error) {
 	const query = `
 		INSERT INTO users (id, is_active, username, email, password_hash, phone)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0))
+		RETURNING id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
 	`
 
 	var user iam.User
@@ -93,7 +93,7 @@ func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool
 // GetUser retrieves user from the database by it's ID or Username
 func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (iam.User, error) {
 	const baseQuery = `
-		SELECT id, is_active, username, email, phone, password_hash, created_at, updated_at
+		SELECT id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
 		FROM users
 	`
 
@@ -182,9 +182,9 @@ func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, ema
 
 	const query = `
 		UPDATE users
-		SET username = $2, email = $3, phone = $4
+		SET username = $2, email = $3, phone = NULLIF($4, 0)
 		WHERE id = $1
-		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
+		RETURNING id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
 	`
 
 	var user iam.User
