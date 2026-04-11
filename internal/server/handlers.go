@@ -111,6 +111,22 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	inviteCode := r.FormValue("invite_code")
+	if inviteCode == "" {
+		http.Error(w, "Invite code is required", http.StatusBadRequest)
+		return
+	}
+	invite, err := h.deps.DB.CheckUserInvite(r.Context(), inviteCode)
+	if err != nil {
+		h.deps.Log.Error("signup_check_user_invite_failed", "error", err)
+		http.Error(w, "Failed to check user invite", http.StatusInternalServerError)
+		return
+	}
+	if !invite {
+		http.Error(w, "User invite not found", http.StatusNotFound)
+		return
+	}
+
 	// Create new user
 
 	userID := uuid.New()
@@ -120,6 +136,12 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.deps.Log.Error("signup_create_user_failed", "error", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
+		h.deps.Log.Error("signup_claim_user_invite_failed", "error", err)
+		http.Error(w, "Failed to claim user invite", http.StatusInternalServerError)
 		return
 	}
 

@@ -231,6 +231,25 @@ func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passw
 	return nil
 }
 
+func (p *PsqlDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
+	const query = `
+		SELECT EXISTS (SELECT 1 FROM invites WHERE id = $1 AND user_id IS NULL)
+	`
+	var exists bool
+	err := p.pool.QueryRow(ctx, query, inviteCode).Scan(&exists)
+	return exists, err
+}
+
+func (p *PsqlDB) ClaimUserInvite(ctx context.Context, inviteCode string, userID uuid.UUID) error {
+	const query = `
+		UPDATE invites
+		SET user_id = $2
+		WHERE id = $1
+	`
+	_, err := p.pool.Exec(ctx, query, inviteCode, userID)
+	return err
+}
+
 func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
 	const query = `
 		SELECT id, user_id, family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by

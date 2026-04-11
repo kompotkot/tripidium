@@ -29,6 +29,11 @@ type Database interface {
 	// UpdateUserPassword sets a new password hash (PUT /user/password)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error
 
+	// CheckUserInvite verifies invite code is valid and unclaimed
+	CheckUserInvite(ctx context.Context, inviteCode string) (bool, error)
+	// ClaimUserInvite atomically verifies invite code and marks it as used
+	ClaimUserInvite(ctx context.Context, inviteCode string, userID uuid.UUID) error
+
 	// --- Auth sessions ---
 
 	// CreateAuthSession creates a session after login
