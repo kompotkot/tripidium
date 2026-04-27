@@ -28,9 +28,11 @@ const (
 	DefaultDatabaseConnMaxLifetime = 30 * time.Second
 
 	// Server defaults
-	DefaultServerAddr           = "localhost"
-	DefaultServerPort           = 8080
-	DefaultIsPhoneRequired bool = false
+	DefaultServerAddr = "localhost"
+	DefaultServerPort = 8080
+
+	DefaultIsPhoneRequired  bool = false
+	DefaultIsInviteRequired bool = false
 
 	DefaultCORSAllowedDefaultMethods = "GET,POST,PATCH,PUT,DELETE,OPTIONS"
 
@@ -135,7 +137,8 @@ func Load() (*types.Config, error) {
 
 	serverAddr := getStringEnv("SERVER_ADDR", DefaultServerAddr)
 	serverPort := getIntEnv("SERVER_PORT", DefaultServerPort)
-	isPhoneRequired := getBoolEnv("SERVER_IS_PHONE_REQUIRED", DefaultIsPhoneRequired)
+	isPhoneRequired := getBoolEnv("IS_PHONE_REQUIRED", DefaultIsPhoneRequired)
+	isInviteRequired := getBoolEnv("IS_INVITE_REQUIRED", DefaultIsInviteRequired)
 
 	serverCORSWhitelistEnv := os.Getenv("SERVER_CORS_WHITELIST")
 	corsWhitelistSls := strings.Split(strings.ReplaceAll(serverCORSWhitelistEnv, " ", ""), ",")
@@ -222,7 +225,8 @@ func Load() (*types.Config, error) {
 			Addr: serverAddr,
 			Port: fmt.Sprintf("%d", serverPort),
 
-			IsPhoneRequired: isPhoneRequired,
+			IsPhoneRequired:  isPhoneRequired,
+			IsInviteRequired: isInviteRequired,
 
 			CORSWhitelist:             corsWhitelist,
 			CORSAllowedDefaultMethods: serverCORSAllowedDefaultMethodsEnv,

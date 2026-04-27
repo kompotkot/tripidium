@@ -111,20 +111,23 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inviteCode := r.FormValue("invite_code")
-	if inviteCode == "" {
-		http.Error(w, "Invite code is required", http.StatusBadRequest)
-		return
-	}
-	invite, err := h.deps.DB.CheckUserInvite(r.Context(), inviteCode)
-	if err != nil {
-		h.deps.Log.Error("signup_check_user_invite_failed", "error", err)
-		http.Error(w, "Failed to check user invite", http.StatusInternalServerError)
-		return
-	}
-	if !invite {
-		http.Error(w, "User invite not found", http.StatusNotFound)
-		return
+	var inviteCode string
+	if h.deps.Cfg.IsInviteRequired {
+		inviteCode = r.FormValue("invite_code")
+		if inviteCode == "" {
+			http.Error(w, "Invite code is required", http.StatusBadRequest)
+			return
+		}
+		invite, err := h.deps.DB.CheckUserInvite(r.Context(), inviteCode)
+		if err != nil {
+			h.deps.Log.Error("signup_check_user_invite_failed", "error", err)
+			http.Error(w, "Failed to check user invite", http.StatusInternalServerError)
+			return
+		}
+		if !invite {
+			http.Error(w, "User invite not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Create new user
@@ -139,10 +142,12 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
-		h.deps.Log.Error("signup_claim_user_invite_failed", "error", err)
-		http.Error(w, "Failed to claim user invite", http.StatusInternalServerError)
-		return
+	if h.deps.Cfg.IsInviteRequired {
+		if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
+			h.deps.Log.Error("signup_claim_user_invite_failed", "error", err)
+			http.Error(w, "Failed to claim user invite", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

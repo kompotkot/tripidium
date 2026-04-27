@@ -52,7 +52,8 @@ type ServerConfig struct {
 	Addr string
 	Port string
 
-	IsPhoneRequired bool
+	IsPhoneRequired  bool
+	IsInviteRequired bool
 
 	CORSWhitelist             map[string]bool
 	CORSAllowedDefaultMethods string
