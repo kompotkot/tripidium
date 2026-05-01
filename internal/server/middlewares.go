@@ -11,9 +11,10 @@ import (
 type authContextKey string
 
 const (
-	authUserIDKey    authContextKey = "auth_user_id"
-	authSessionIDKey authContextKey = "auth_session_id"
-	authJTIKey       authContextKey = "auth_jti"
+	authSubjectIDKey   authContextKey = "auth_subject_id"
+	authSubjectKindKey authContextKey = "auth_subject_kind"
+	authSessionIDKey   authContextKey = "auth_session_id"
+	authJTIKey         authContextKey = "auth_jti"
 )
 
 // responseWriter wraps http.ResponseWriter to capture status code and bytes written
@@ -115,18 +116,39 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 }
 
 func withAuthIdentity(ctx context.Context, identity service.AccessTokenIdentity) context.Context {
-	ctx = context.WithValue(ctx, authUserIDKey, identity.UserID)
+	ctx = context.WithValue(ctx, authSubjectIDKey, identity.SubjectID)
+	ctx = context.WithValue(ctx, authSubjectKindKey, identity.SubjectKind)
 	ctx = context.WithValue(ctx, authSessionIDKey, identity.SessionID)
 	ctx = context.WithValue(ctx, authJTIKey, identity.JTI)
 	return ctx
 }
 
-func authUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(authUserIDKey).(string)
-	if !ok || userID == "" {
+func authSubjectIDFromContext(ctx context.Context) (string, bool) {
+	subjectID, ok := ctx.Value(authSubjectIDKey).(string)
+	if !ok || subjectID == "" {
 		return "", false
 	}
-	return userID, true
+	return subjectID, true
+}
+
+func authSubjectKindFromContext(ctx context.Context) (string, bool) {
+	subjectKind, ok := ctx.Value(authSubjectKindKey).(string)
+	if !ok || subjectKind == "" {
+		return "", false
+	}
+	return subjectKind, true
+}
+
+func authenticatedUserSubjectIDFromContext(ctx context.Context) (string, bool) {
+	subjectID, ok := authSubjectIDFromContext(ctx)
+	if !ok {
+		return "", false
+	}
+	subjectKind, ok := authSubjectKindFromContext(ctx)
+	if !ok || subjectKind != "user" {
+		return "", false
+	}
+	return subjectID, true
 }
 
 func authSessionIDFromContext(ctx context.Context) (string, bool) {

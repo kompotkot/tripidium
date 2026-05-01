@@ -266,7 +266,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Issue access token
 
-	accessToken, err := service.CreateAccessToken(user.ID, session.ID, h.deps.Cfg.AuthConfig)
+	accessToken, err := service.CreateAccessToken(user.ID, session.ID, session.SubjectKind, h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("login_access_token_create_failed", "error", err)
 		http.Error(w, "Failed to create access token", http.StatusInternalServerError)
@@ -336,7 +336,7 @@ func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := service.CreateAccessToken(newSession.UserID, newSession.ID, h.deps.Cfg.AuthConfig)
+	accessToken, err := service.CreateAccessToken(newSession.SubjectID, newSession.ID, newSession.SubjectKind, h.deps.Cfg.AuthConfig)
 	if err != nil {
 		h.deps.Log.Error("refresh_access_token_create_failed", "error", err)
 		http.Error(w, "Failed to create access token", http.StatusInternalServerError)
@@ -359,7 +359,7 @@ func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authUserIDFromContext(r.Context())
+	subjectIDRaw, ok := authSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -372,13 +372,24 @@ func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID, err := uuid.Parse(sessionIDRaw)
 	if err != nil {
-		h.deps.Log.Error("logout_invalid_session_id", "user_id", userID, "session_id", sessionIDRaw, "error", err)
+		h.deps.Log.Error("logout_invalid_session_id", "subject_id", subjectIDRaw, "session_id", sessionIDRaw, "error", err)
 		http.Error(w, "Invalid session id", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.deps.DB.RevokeAuthSession(r.Context(), sessionID, "logout", nil); err != nil {
-		h.deps.Log.Error("logout_revoke_session_failed", "user_id", userID, "session_id", sessionIDRaw, "error", err)
+	subjectID, err := uuid.Parse(subjectIDRaw)
+	if err != nil {
+		h.deps.Log.Error("logout_invalid_subject_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Invalid subject id", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.RevokeAuthSession(r.Context(), sessionID, subjectID, "logout", nil); err != nil {
+		if errors.Is(err, db.ErrTokenNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("logout_revoke_session_failed", "subject_id", subjectIDRaw, "session_id", sessionIDRaw, "error", err)
 		http.Error(w, "Failed to revoke auth session", http.StatusInternalServerError)
 		return
 	}
@@ -399,7 +410,7 @@ func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
-	userIDRaw, ok := authUserIDFromContext(r.Context())
+	subjectIDRaw, ok := authSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -410,16 +421,16 @@ func (h *handlers) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := uuid.Parse(userIDRaw)
+	subjectID, err := uuid.Parse(subjectIDRaw)
 	if err != nil {
-		h.deps.Log.Error("sessions_invalid_user_id", "user_id", userIDRaw, "error", err)
-		http.Error(w, "Invalid user id", http.StatusInternalServerError)
+		h.deps.Log.Error("sessions_invalid_subject_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Invalid subject id", http.StatusInternalServerError)
 		return
 	}
 
-	sessions, err := h.deps.DB.ListAuthSessions(r.Context(), userID)
+	sessions, err := h.deps.DB.ListAuthSessions(r.Context(), subjectID)
 	if err != nil {
-		h.deps.Log.Error("sessions_list_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("sessions_list_failed", "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to list sessions", http.StatusInternalServerError)
 		return
 	}
@@ -437,19 +448,19 @@ func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) 
 }
 
 func (h *handlers) GetUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authUserIDFromContext(r.Context())
+	subjectID, ok := authenticatedUserSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	user, err := h.deps.DB.GetUser(r.Context(), userID, "", "")
+	user, err := h.deps.DB.GetUser(r.Context(), subjectID, "", "")
 	if err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.deps.Log.Error("get_user_failed", "user_id", userID, "error", err)
+		h.deps.Log.Error("get_user_failed", "subject_id", subjectID, "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
 	}
@@ -464,25 +475,25 @@ func (h *handlers) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) UserPatch(w http.ResponseWriter, r *http.Request) {
-	userIDRaw, ok := authUserIDFromContext(r.Context())
+	subjectIDRaw, ok := authenticatedUserSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_patch_parse_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_patch_parse_failed", "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
 		return
 	}
 
-	currentUser, err := h.deps.DB.GetUser(r.Context(), userIDRaw, "", "")
+	currentUser, err := h.deps.DB.GetUser(r.Context(), subjectIDRaw, "", "")
 	if err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.deps.Log.Error("user_patch_get_user_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_patch_get_user_failed", "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
 	}
@@ -541,7 +552,7 @@ func (h *handlers) UserPatch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.deps.Log.Error("user_patch_update_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_patch_update_failed", "user_id", currentUser.ID.String(), "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to update user", http.StatusInternalServerError)
 		return
 	}
@@ -551,14 +562,14 @@ func (h *handlers) UserPatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
-	userIDRaw, ok := authUserIDFromContext(r.Context())
+	subjectIDRaw, ok := authenticatedUserSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_password_parse_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_password_parse_failed", "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
 		return
 	}
@@ -581,13 +592,13 @@ func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.deps.DB.GetUser(r.Context(), userIDRaw, "", "")
+	user, err := h.deps.DB.GetUser(r.Context(), subjectIDRaw, "", "")
 	if err != nil {
 		if errors.Is(err, db.ErrUserNotFound) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.deps.Log.Error("user_password_get_user_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_password_get_user_failed", "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
 	}
@@ -598,7 +609,7 @@ func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 
 	ok, err = service.VerifyPassword(currentPassword, user.PasswordHash, h.deps.Cfg.AuthConfig)
 	if err != nil {
-		h.deps.Log.Error("user_password_verify_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_password_verify_failed", "user_id", user.ID.String(), "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to verify current password", http.StatusInternalServerError)
 		return
 	}
@@ -609,14 +620,14 @@ func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 
 	passwordHash, err := service.HashPassword(newPassword, h.deps.Cfg.AuthConfig)
 	if err != nil {
-		h.deps.Log.Error("user_password_hash_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_password_hash_failed", "user_id", user.ID.String(), "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to hash new password", http.StatusInternalServerError)
 		return
 	}
 
-	userID, err := uuid.Parse(userIDRaw)
-	if err != nil {
-		h.deps.Log.Error("user_password_user_id_parse_failed", "user_id", userIDRaw, "error", err)
+	userID := user.ID
+	if userID == uuid.Nil {
+		h.deps.Log.Error("user_password_empty_user_id", "subject_id", subjectIDRaw)
 		http.Error(w, "Invalid user id", http.StatusInternalServerError)
 		return
 	}
@@ -626,7 +637,7 @@ func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.deps.Log.Error("user_password_update_failed", "user_id", userIDRaw, "error", err)
+		h.deps.Log.Error("user_password_update_failed", "user_id", userID.String(), "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to update password", http.StatusInternalServerError)
 		return
 	}

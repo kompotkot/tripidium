@@ -12,6 +12,24 @@ BEGIN
 END;
 $$;
 
+CREATE TABLE IF NOT EXISTS subjects (
+    id UUID NOT NULL,
+
+    kind VARCHAR NOT NULL,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+
+    CONSTRAINT pk_subjects PRIMARY KEY (id),
+    CONSTRAINT subjects_kind_check CHECK (kind IN ('user'))
+);
+
+DROP TRIGGER IF EXISTS trg_subjects_set_updated_at ON subjects;
+CREATE TRIGGER trg_subjects_set_updated_at
+BEFORE UPDATE ON subjects
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
 CREATE TABLE IF NOT EXISTS users (
     id UUID DEFAULT gen_random_uuid() NOT NULL, 
 
@@ -25,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 
     CONSTRAINT pk_users PRIMARY KEY (id), 
+    CONSTRAINT fk_users_id_subjects FOREIGN KEY (id) REFERENCES subjects (id) ON DELETE CASCADE,
     CONSTRAINT uq_users_phone UNIQUE (phone),
     CONSTRAINT uq_users_email UNIQUE (email),
     CONSTRAINT uq_users_username UNIQUE (username)
@@ -39,7 +58,7 @@ EXECUTE FUNCTION set_updated_at();
 CREATE TABLE IF NOT EXISTS auth_sessions (
     id UUID DEFAULT gen_random_uuid() NOT NULL, 
 
-    user_id UUID NOT NULL, 
+    subject_id UUID NOT NULL, 
     family_id UUID DEFAULT gen_random_uuid() NOT NULL, 
     refresh_token_hash VARCHAR(255) NOT NULL, 
     created_ip VARCHAR(45) NOT NULL, 
@@ -55,7 +74,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
     CONSTRAINT pk_auth_sessions PRIMARY KEY (id),
     CONSTRAINT fk_auth_sess_repl_by_auth_sess FOREIGN KEY (replaced_by) REFERENCES auth_sessions (id) ON DELETE SET NULL,
-    CONSTRAINT fk_auth_sessions_user_id_users FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_auth_sessions_subject_id_subjects FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE,
     CONSTRAINT ck_auth_sess_repl_not_self CHECK (replaced_by IS NULL OR replaced_by <> id),
     CONSTRAINT ck_auth_sess_exps_aft_created CHECK (expires_at > created_at),
     CONSTRAINT ck_auth_sess_rev_aft_created CHECK (revoked_at IS NULL OR revoked_at >= created_at)
@@ -69,11 +88,11 @@ EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS ix_auth_sessions_replaced_by ON auth_sessions (replaced_by);
 
-CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_created_at ON auth_sessions (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_auth_sessions_subject_created_at ON auth_sessions (subject_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_famid_rev_at ON auth_sessions (family_id, revoked_at);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_user_id_revoked_at ON auth_sessions (user_id, revoked_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_subject_id_revoked_at ON auth_sessions (subject_id, revoked_at);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_rf_tok_hsh ON auth_sessions (refresh_token_hash);
 

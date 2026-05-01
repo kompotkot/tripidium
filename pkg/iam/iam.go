@@ -22,7 +22,8 @@ type User struct {
 // AuthSession represents authentication session
 type AuthSession struct {
 	ID               uuid.UUID  // id
-	UserID           uuid.UUID  // user_id
+	SubjectID        uuid.UUID  // subject_id
+	SubjectKind      string     // subjects.kind
 	FamilyID         uuid.UUID  // family_id
 	RefreshTokenHash string     // refresh_token_hash
 	CreatedIP        net.IP     // created_ip
