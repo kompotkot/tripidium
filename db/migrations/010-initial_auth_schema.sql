@@ -53,12 +53,12 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     revoke_reason VARCHAR(255), 
     replaced_by UUID,
 
-    CONSTRAINT pk_auth_sessions PRIMARY KEY (id), 
-    CONSTRAINT fk_auth_sessions_replaced_by_auth_sessions FOREIGN KEY(replaced_by) REFERENCES auth_sessions (id) ON DELETE SET NULL, 
-    CONSTRAINT fk_auth_sessions_user_id_users FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
-    CONSTRAINT ck_auth_sessions_replaced_by_not_self CHECK (replaced_by IS NULL OR replaced_by <> id),
-    CONSTRAINT ck_auth_sessions_expires_after_created CHECK (expires_at > created_at),
-    CONSTRAINT ck_auth_sessions_revoked_after_created CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+    CONSTRAINT pk_auth_sessions PRIMARY KEY (id),
+    CONSTRAINT fk_auth_sess_repl_by_auth_sess FOREIGN KEY (replaced_by) REFERENCES auth_sessions (id) ON DELETE SET NULL,
+    CONSTRAINT fk_auth_sessions_user_id_users FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT ck_auth_sess_repl_not_self CHECK (replaced_by IS NULL OR replaced_by <> id),
+    CONSTRAINT ck_auth_sess_exps_aft_created CHECK (expires_at > created_at),
+    CONSTRAINT ck_auth_sess_rev_aft_created CHECK (revoked_at IS NULL OR revoked_at >= created_at)
 );
 
 DROP TRIGGER IF EXISTS trg_auth_sessions_set_updated_at ON auth_sessions;
@@ -71,11 +71,11 @@ CREATE INDEX IF NOT EXISTS ix_auth_sessions_replaced_by ON auth_sessions (replac
 
 CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_created_at ON auth_sessions (user_id, created_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_family_id_revoked_at ON auth_sessions (family_id, revoked_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_famid_rev_at ON auth_sessions (family_id, revoked_at);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_user_id_revoked_at ON auth_sessions (user_id, revoked_at);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_refresh_token_hash ON auth_sessions (refresh_token_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_rf_tok_hsh ON auth_sessions (refresh_token_hash);
 
 WITH updated AS (
     UPDATE version_auth
