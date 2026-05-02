@@ -5,15 +5,16 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kompotkot/tripidium/internal/model"
 	"github.com/kompotkot/tripidium/internal/service"
 	"github.com/kompotkot/tripidium/internal/transport/runtime"
 	"github.com/kompotkot/tripidium/pkg/db"
 	"github.com/kompotkot/tripidium/pkg/dto"
+	"github.com/kompotkot/tripidium/pkg/model"
 )
 
 type Handler struct {
@@ -22,100 +23,6 @@ type Handler struct {
 
 func NewHandler(deps runtime.Dependencies) *Handler {
 	return &Handler{deps: deps}
-}
-
-// SignUp handles new user registrations
-func (h *Handler) AuthSignUp(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("signup_parse_failed", "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
-		return
-	}
-
-	usernameRaw := r.FormValue("username")
-	emailRaw := r.FormValue("email")
-	passwordRaw := r.FormValue("password")
-	phoneRaw := r.FormValue("phone")
-
-	if usernameRaw == "" || emailRaw == "" || passwordRaw == "" {
-		http.Error(w, "Username, email and password are required", http.StatusBadRequest)
-		return
-	}
-
-	// Validate input
-
-	username, err := service.ValidateUsername(usernameRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	email, err := service.ValidateEmail(emailRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	password, err := service.ValidatePassword(passwordRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	phone, err := service.ValidatePhone(phoneRaw, h.deps.Cfg.IsPhoneRequired)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	passwordHash, err := service.HashPassword(password, h.deps.Cfg.AuthConfig)
-	if err != nil {
-		h.deps.Log.Error("signup_hash_password_failed", "error", err)
-		http.Error(w, "Failed to hash password", http.StatusBadRequest)
-		return
-	}
-
-	var inviteCode string
-	if h.deps.Cfg.IsInviteRequired {
-		inviteCode = r.FormValue("invite_code")
-		if inviteCode == "" {
-			http.Error(w, "Invite code is required", http.StatusBadRequest)
-			return
-		}
-		invite, err := h.deps.DB.CheckUserInvite(r.Context(), inviteCode)
-		if err != nil {
-			h.deps.Log.Error("signup_check_user_invite_failed", "error", err)
-			http.Error(w, "Failed to check user invite", http.StatusInternalServerError)
-			return
-		}
-		if !invite {
-			http.Error(w, "User invite not found", http.StatusNotFound)
-			return
-		}
-	}
-
-	// Create new user
-
-	userID := uuid.New()
-	isActive := true
-
-	user, err := h.deps.DB.CreateUser(r.Context(), userID, isActive, username, email, passwordHash, phone)
-	if err != nil {
-		h.deps.Log.Error("signup_create_user_failed", "error", err)
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
-		return
-	}
-
-	if h.deps.Cfg.IsInviteRequired {
-		if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
-			h.deps.Log.Error("signup_claim_user_invite_failed", "error", err)
-			http.Error(w, "Failed to claim user invite", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
 func (h *Handler) AuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +226,7 @@ func (h *Handler) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AuthLogout(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
+	subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -346,35 +253,32 @@ func (h *Handler) AuthLogout(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.deps.DB.RevokeAuthSession(r.Context(), sessionID, subjectID, "logout", nil); err != nil {
 		if errors.Is(err, db.ErrTokenNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			// Idempotent: already revoked, still clear the cookie
+		} else {
+			h.deps.Log.Error("logout_revoke_session_failed", "subject_id", subjectIDRaw, "session_id", sessionIDRaw, "error", err)
+			http.Error(w, "Failed to revoke auth session", http.StatusInternalServerError)
 			return
 		}
-		h.deps.Log.Error("logout_revoke_session_failed", "subject_id", subjectIDRaw, "session_id", sessionIDRaw, "error", err)
-		http.Error(w, "Failed to revoke auth session", http.StatusInternalServerError)
-		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     h.deps.Cfg.AuthConfig.RefreshTokenCookieName,
-		Value:    "",
-		Path:     h.deps.Cfg.AuthConfig.RefreshTokenCookiePath,
-		Domain:   h.deps.Cfg.AuthConfig.RefreshTokenCookieDomain,
-		Expires:  time.Unix(0, 0).UTC(),
-		MaxAge:   -1,
-		HttpOnly: h.deps.Cfg.AuthConfig.RefreshTokenCookieHttpOnly,
-		Secure:   h.deps.Cfg.AuthConfig.RefreshTokenCookieSecure,
-		SameSite: h.deps.Cfg.AuthConfig.RefreshTokenCookieSameSite,
-	})
-
+	h.clearRefreshCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
+	subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// Sessions listing is currently restricted to user-backed subjects
+	_, isUser := runtime.AuthUserIDFromContext(r.Context())
+	if !isUser {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	currentSessionID, ok := runtime.AuthSessionIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -399,16 +303,151 @@ func (h *Handler) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToAuthSessionsResponse(sessions, currentSessionID))
 }
 
-func notImplemented(w http.ResponseWriter) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (h *Handler) AuthSessionsRevokeAll(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	subjectID, err := uuid.Parse(subjectIDRaw)
+	if err != nil {
+		h.deps.Log.Error("sessions_revoke_all_invalid_subject_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Invalid subject id", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.RevokeAllAuthSessions(r.Context(), subjectID); err != nil {
+		h.deps.Log.Error("sessions_revoke_all_failed", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Failed to revoke all sessions", http.StatusInternalServerError)
+		return
+	}
+
+	h.clearRefreshCookie(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (h *Handler) AuthSessionRevokeOne(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	sessionIDRaw := r.PathValue("session_id")
+	if sessionIDRaw == "" {
+		http.Error(w, "Missing session_id", http.StatusBadRequest)
+		return
+	}
+	sessionID, err := uuid.Parse(sessionIDRaw)
+	if err != nil {
+		http.Error(w, "Invalid session_id", http.StatusBadRequest)
+		return
+	}
+
+	subjectID, err := uuid.Parse(subjectIDRaw)
+	if err != nil {
+		h.deps.Log.Error("session_revoke_one_invalid_subject_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Invalid subject id", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.RevokeAuthSession(r.Context(), sessionID, subjectID, "logout", nil); err != nil {
+		if errors.Is(err, db.ErrTokenNotFound) {
+			http.Error(w, "Session not found", http.StatusNotFound)
+			return
+		}
+		h.deps.Log.Error("session_revoke_one_failed", "subject_id", subjectIDRaw, "session_id", sessionIDRaw, "error", err)
+		http.Error(w, "Failed to revoke session", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+// AuthGetSubject returns the current authenticated subject identity and typed profile.
+func (h *Handler) AuthGetSubject(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	subjectID, err := uuid.Parse(subjectIDRaw)
+	if err != nil {
+		h.deps.Log.Error("get_subject_invalid_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Invalid subject id", http.StatusInternalServerError)
+		return
+	}
+
+	subject, err := h.deps.DB.GetSubject(r.Context(), subjectID)
+	if err != nil {
+		if errors.Is(err, db.ErrSubjectNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("get_subject_failed", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Failed to get subject", http.StatusInternalServerError)
+		return
+	}
+
+	var resp dto.SubjectResponse
+	resp.SubjectID = subject.ID.String()
+	resp.Kind = subject.Kind
+
+	switch subject.Kind {
+	case model.SubjectKindUser:
+		user, err := h.deps.DB.GetUser(r.Context(), subjectIDRaw, "", "")
+		if err != nil {
+			if errors.Is(err, db.ErrUserNotFound) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			h.deps.Log.Error("get_subject_user_failed", "subject_id", subjectIDRaw, "error", err)
+			http.Error(w, "Failed to get subject profile", http.StatusInternalServerError)
+			return
+		}
+		if !user.IsActive {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		resp.IsActive = true
+		profile := &dto.SubjectUserProfile{
+			UserID:   user.ID.String(),
+			Username: user.Username,
+			Email:    user.Email,
+		}
+		if user.Phone != nil {
+			p := strconv.Itoa(int(*user.Phone))
+			profile.Phone = &p
+		}
+		resp.User = profile
+
+	case model.SubjectKindOrganization:
+		org, err := h.deps.DB.GetOrganization(r.Context(), subjectID)
+		if err != nil {
+			if errors.Is(err, db.ErrOrganizationNotFound) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			h.deps.Log.Error("get_subject_org_failed", "subject_id", subjectIDRaw, "error", err)
+			http.Error(w, "Failed to get subject profile", http.StatusInternalServerError)
+			return
+		}
+		resp.IsActive = true
+		resp.Organization = &dto.SubjectOrganizationProfile{
+			OrganizationID: org.ID.String(),
+			Name:           org.Name,
+		}
+
+	default:
+		// service_account, system_actor, external_identity — not yet supported
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func ToAuthLoginResponse(accessToken, refreshToken string) dto.AuthLoginResponse {
@@ -419,14 +458,14 @@ func ToAuthLoginResponse(accessToken, refreshToken string) dto.AuthLoginResponse
 
 func ToUserResponse(u model.User) dto.UserResponse {
 	user := dto.UserResponse{
-		Id:        u.ID.String(),
+		ID:        u.ID.String(),
 		Username:  u.Username,
 		Email:     u.Email,
 		CreatedAt: u.CreatedAt,
 		UpdatedAt: u.UpdatedAt,
 	}
 	if u.Phone != nil {
-		p := int(*u.Phone)
+		p := strconv.Itoa(int(*u.Phone))
 		user.Phone = &p
 	}
 	return user
@@ -439,7 +478,7 @@ func ToAuthSessionResponse(s model.AuthSession, currentSessionID string) dto.Aut
 	}
 
 	return dto.AuthSessionResponse{
-		Id:        s.ID.String(),
+		ID:        s.ID.String(),
 		IsCurrent: s.ID.String() == currentSessionID,
 		CreatedAt: s.CreatedAt,
 		ExpiresAt: s.ExpiresAt,
@@ -466,4 +505,18 @@ func ToAuthSessionsResponse(sessions []model.AuthSession, currentSessionID strin
 		out = append(out, ToAuthSessionResponse(s, currentSessionID))
 	}
 	return out
+}
+
+func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.deps.Cfg.AuthConfig.RefreshTokenCookieName,
+		Value:    "",
+		Path:     h.deps.Cfg.AuthConfig.RefreshTokenCookiePath,
+		Domain:   h.deps.Cfg.AuthConfig.RefreshTokenCookieDomain,
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: h.deps.Cfg.AuthConfig.RefreshTokenCookieHttpOnly,
+		Secure:   h.deps.Cfg.AuthConfig.RefreshTokenCookieSecure,
+		SameSite: h.deps.Cfg.AuthConfig.RefreshTokenCookieSameSite,
+	})
 }

@@ -35,7 +35,7 @@ func AuthUserIDFromContext(ctx context.Context) (string, bool) {
 	return userID, true
 }
 
-func authSubjectIDFromContext(ctx context.Context) (string, bool) {
+func AuthSubjectIDFromContext(ctx context.Context) (string, bool) {
 	subjectID, ok := ctx.Value(AuthSubjectIDKey).(string)
 	if !ok || subjectID == "" {
 		return "", false
@@ -43,7 +43,7 @@ func authSubjectIDFromContext(ctx context.Context) (string, bool) {
 	return subjectID, true
 }
 
-func authSubjectKindFromContext(ctx context.Context) (string, bool) {
+func AuthSubjectKindFromContext(ctx context.Context) (string, bool) {
 	subjectKind, ok := ctx.Value(AuthSubjectKindKey).(string)
 	if !ok || subjectKind == "" {
 		return "", false
@@ -51,12 +51,12 @@ func authSubjectKindFromContext(ctx context.Context) (string, bool) {
 	return subjectKind, true
 }
 
-func authenticatedUserSubjectIDFromContext(ctx context.Context) (string, bool) {
-	subjectID, ok := authSubjectIDFromContext(ctx)
+func AuthenticatedUserSubjectIDFromContext(ctx context.Context) (string, bool) {
+	subjectID, ok := AuthSubjectIDFromContext(ctx)
 	if !ok {
 		return "", false
 	}
-	subjectKind, ok := authSubjectKindFromContext(ctx)
+	subjectKind, ok := AuthSubjectKindFromContext(ctx)
 	if !ok || subjectKind != "user" {
 		return "", false
 	}

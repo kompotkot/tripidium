@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kompotkot/tripidium/internal/model"
+	"github.com/kompotkot/tripidium/pkg/model"
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
@@ -140,5 +140,49 @@ func (s *SqliteDB) RevokeAuthSession(ctx context.Context, sessionID, subjectID u
 }
 
 func (s *SqliteDB) RevokeAllAuthSessions(ctx context.Context, subjectID uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) GetSubject(ctx context.Context, subjectID uuid.UUID) (model.Subject, error) {
+	return model.Subject{}, nil
+}
+
+func (s *SqliteDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name string, description *string, ownerUserID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) GetOrganization(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]model.Organization, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *string, description *string) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) DeleteOrganization(ctx context.Context, orgID uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]model.OrganizationMember, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) AddOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) GetOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) RemoveOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) error {
 	return nil
 }

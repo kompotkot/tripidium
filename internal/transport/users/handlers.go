@@ -7,11 +7,11 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	"github.com/kompotkot/tripidium/internal/model"
 	"github.com/kompotkot/tripidium/internal/service"
 	"github.com/kompotkot/tripidium/internal/transport/runtime"
 	"github.com/kompotkot/tripidium/pkg/db"
 	"github.com/kompotkot/tripidium/pkg/dto"
+	"github.com/kompotkot/tripidium/pkg/model"
 )
 
 type Handler struct {
@@ -20,6 +20,98 @@ type Handler struct {
 
 func NewHandler(deps runtime.Dependencies) *Handler {
 	return &Handler{deps: deps}
+}
+
+// RegisterUser handles POST /identity/users — creates a new user-backed subject.
+func (h *Handler) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	var req dto.RegisterUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "" || req.Email == "" || req.Password == "" {
+		http.Error(w, "Username, email and password are required", http.StatusBadRequest)
+		return
+	}
+
+	username, err := service.ValidateUsername(req.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	email, err := service.ValidateEmail(req.Email)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	password, err := service.ValidatePassword(req.Password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	phoneRaw := ""
+	if req.Phone != nil {
+		phoneRaw = *req.Phone
+	}
+	phone, err := service.ValidatePhone(phoneRaw, h.deps.Cfg.IsPhoneRequired)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := service.HashPassword(password, h.deps.Cfg.AuthConfig)
+	if err != nil {
+		h.deps.Log.Error("register_hash_password_failed", "error", err)
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
+	userID := uuid.New()
+
+	var inviteCode string
+	if h.deps.Cfg.IsInviteRequired {
+		if req.InviteCode == nil || *req.InviteCode == "" {
+			http.Error(w, "Invite code is required", http.StatusBadRequest)
+			return
+		}
+		inviteCode = *req.InviteCode
+		valid, err := h.deps.DB.CheckUserInvite(r.Context(), inviteCode)
+		if err != nil {
+			h.deps.Log.Error("register_check_invite_failed", "error", err)
+			http.Error(w, "Failed to check invite code", http.StatusInternalServerError)
+			return
+		}
+		if !valid {
+			http.Error(w, "Invite code not found or already used", http.StatusNotFound)
+			return
+		}
+	}
+
+	user, err := h.deps.DB.CreateUser(r.Context(), userID, true, username, email, passwordHash, phone)
+	if err != nil {
+		if errors.Is(err, db.ErrUserAlreadyExists) {
+			http.Error(w, "Username or email already exists", http.StatusConflict)
+			return
+		}
+		h.deps.Log.Error("register_create_user_failed", "error", err)
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
+	if h.deps.Cfg.IsInviteRequired {
+		if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
+			h.deps.Log.Error("register_claim_invite_failed", "error", err)
+			// User was created; best-effort log, do not fail the response
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -225,14 +317,14 @@ func (h *Handler) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 
 func ToUserResponse(u model.User) dto.UserResponse {
 	user := dto.UserResponse{
-		Id:        u.ID.String(),
+		ID:        u.ID.String(),
 		Username:  u.Username,
 		Email:     u.Email,
 		CreatedAt: u.CreatedAt,
 		UpdatedAt: u.UpdatedAt,
 	}
 	if u.Phone != nil {
-		p := int(*u.Phone)
+		p := strconv.Itoa(int(*u.Phone))
 		user.Phone = &p
 	}
 	return user

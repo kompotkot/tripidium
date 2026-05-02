@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kompotkot/tripidium/internal/model"
 	db "github.com/kompotkot/tripidium/pkg/db"
+	"github.com/kompotkot/tripidium/pkg/model"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -250,7 +250,7 @@ func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passw
 
 func (p *PsqlDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
 	const query = `
-		SELECT EXISTS (SELECT 1 FROM invites WHERE id = $1 AND user_id IS NULL)
+		SELECT EXISTS (SELECT 1 FROM user_invites WHERE id = $1 AND user_id IS NULL)
 	`
 	var exists bool
 	err := p.pool.QueryRow(ctx, query, inviteCode).Scan(&exists)
@@ -259,7 +259,7 @@ func (p *PsqlDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, 
 
 func (p *PsqlDB) ClaimUserInvite(ctx context.Context, inviteCode string, userID uuid.UUID) error {
 	const query = `
-		UPDATE invites
+		UPDATE user_invites
 		SET user_id = $2
 		WHERE id = $1
 	`
@@ -488,5 +488,253 @@ func (p *PsqlDB) RevokeAuthSession(ctx context.Context, sessionID, subjectID uui
 }
 
 func (p *PsqlDB) RevokeAllAuthSessions(ctx context.Context, subjectID uuid.UUID) error {
+	const query = `
+		UPDATE auth_sessions
+		SET revoked_at = NOW(), revoke_reason = 'logout'
+		WHERE subject_id = $1 AND revoked_at IS NULL
+	`
+	_, err := p.pool.Exec(ctx, query, subjectID)
+	return err
+}
+
+func (p *PsqlDB) GetSubject(ctx context.Context, subjectID uuid.UUID) (model.Subject, error) {
+	const query = `
+		SELECT id, kind, created_at, updated_at
+		FROM subjects
+		WHERE id = $1
+	`
+	var s model.Subject
+	err := p.pool.QueryRow(ctx, query, subjectID).Scan(
+		&s.ID, &s.Kind, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Subject{}, db.ErrSubjectNotFound
+		}
+		return model.Subject{}, err
+	}
+	return s, nil
+}
+
+func (p *PsqlDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name string, description *string, ownerUserID uuid.UUID) (model.Organization, error) {
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return model.Organization{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	const subjectQuery = `INSERT INTO subjects (id, kind) VALUES ($1, 'organization')`
+	if _, err := tx.Exec(ctx, subjectQuery, orgID); err != nil {
+		return model.Organization{}, err
+	}
+
+	const orgQuery = `
+		INSERT INTO organizations (id, name, description)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, description, created_at, updated_at
+	`
+	var org model.Organization
+	if err := tx.QueryRow(ctx, orgQuery, orgID, name, description).Scan(
+		&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt,
+	); err != nil {
+		return model.Organization{}, err
+	}
+
+	const memberQuery = `
+		INSERT INTO organization_members (user_id, organization_id, role)
+		VALUES ($1, $2, 'owner')
+	`
+	if _, err := tx.Exec(ctx, memberQuery, ownerUserID, orgID); err != nil {
+		return model.Organization{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return model.Organization{}, err
+	}
+	return org, nil
+}
+
+func (p *PsqlDB) GetOrganization(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
+	const query = `
+		SELECT id, name, description, created_at, updated_at
+		FROM organizations
+		WHERE id = $1
+	`
+	var org model.Organization
+	err := p.pool.QueryRow(ctx, query, orgID).Scan(
+		&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Organization{}, db.ErrOrganizationNotFound
+		}
+		return model.Organization{}, err
+	}
+	return org, nil
+}
+
+func (p *PsqlDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]model.Organization, error) {
+	const query = `
+		SELECT o.id, o.name, o.description, o.created_at, o.updated_at
+		FROM organizations o
+		JOIN organization_members m ON m.organization_id = o.id
+		WHERE m.user_id = $1
+		ORDER BY o.created_at DESC
+	`
+	rows, err := p.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	orgs := make([]model.Organization, 0)
+	for rows.Next() {
+		var org model.Organization
+		if err := rows.Scan(&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt); err != nil {
+			return nil, err
+		}
+		orgs = append(orgs, org)
+	}
+	return orgs, rows.Err()
+}
+
+func (p *PsqlDB) UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *string, description *string) (model.Organization, error) {
+	const query = `
+		UPDATE organizations
+		SET
+			name = COALESCE($2, name),
+			description = COALESCE($3, description)
+		WHERE id = $1
+		RETURNING id, name, description, created_at, updated_at
+	`
+	var org model.Organization
+	err := p.pool.QueryRow(ctx, query, orgID, name, description).Scan(
+		&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Organization{}, db.ErrOrganizationNotFound
+		}
+		return model.Organization{}, err
+	}
+	return org, nil
+}
+
+func (p *PsqlDB) DeleteOrganization(ctx context.Context, orgID uuid.UUID) error {
+	// Deleting the subject cascades to organizations (ON DELETE CASCADE) and then to organization_members.
+	const query = `DELETE FROM subjects WHERE id = $1`
+	tag, err := p.pool.Exec(ctx, query, orgID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrOrganizationNotFound
+	}
+	return nil
+}
+
+func (p *PsqlDB) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]model.OrganizationMember, error) {
+	const query = `
+		SELECT user_id, organization_id, role, created_at, updated_at
+		FROM organization_members
+		WHERE organization_id = $1
+		ORDER BY created_at
+	`
+	rows, err := p.pool.Query(ctx, query, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]model.OrganizationMember, 0)
+	for rows.Next() {
+		var m model.OrganizationMember
+		if err := rows.Scan(&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+func (p *PsqlDB) AddOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+	const query = `
+		INSERT INTO organization_members (user_id, organization_id, role)
+		VALUES ($1, $2, $3)
+		RETURNING user_id, organization_id, role, created_at, updated_at
+	`
+	var m model.OrganizationMember
+	err := p.pool.QueryRow(ctx, query, userID, orgID, role).Scan(
+		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.OrganizationMember{}, db.ErrUnexpectedEmptyReturn
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23505": // unique_violation
+				return model.OrganizationMember{}, db.ErrOrganizationMemberAlreadyExists
+			case "23503": // foreign_key_violation
+				return model.OrganizationMember{}, db.ErrUserNotFound
+			}
+		}
+		return model.OrganizationMember{}, err
+	}
+	return m, nil
+}
+
+func (p *PsqlDB) GetOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) (model.OrganizationMember, error) {
+	const query = `
+		SELECT user_id, organization_id, role, created_at, updated_at
+		FROM organization_members
+		WHERE user_id = $1 AND organization_id = $2
+	`
+	var m model.OrganizationMember
+	err := p.pool.QueryRow(ctx, query, userID, orgID).Scan(
+		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.OrganizationMember{}, db.ErrOrganizationMemberNotFound
+		}
+		return model.OrganizationMember{}, err
+	}
+	return m, nil
+}
+
+func (p *PsqlDB) UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+	const query = `
+		UPDATE organization_members
+		SET role = $3
+		WHERE user_id = $1 AND organization_id = $2
+		RETURNING user_id, organization_id, role, created_at, updated_at
+	`
+	var m model.OrganizationMember
+	err := p.pool.QueryRow(ctx, query, userID, orgID, role).Scan(
+		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.OrganizationMember{}, db.ErrOrganizationMemberNotFound
+		}
+		return model.OrganizationMember{}, err
+	}
+	return m, nil
+}
+
+func (p *PsqlDB) RemoveOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) error {
+	const query = `
+		DELETE FROM organization_members
+		WHERE user_id = $1 AND organization_id = $2
+	`
+	tag, err := p.pool.Exec(ctx, query, userID, orgID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrOrganizationMemberNotFound
+	}
 	return nil
 }
