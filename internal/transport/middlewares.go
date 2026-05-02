@@ -1,21 +1,14 @@
-package server
+package transport
 
 import (
-	"context"
 	"net/http"
 	"time"
 
 	"github.com/kompotkot/tripidium/internal/service"
+	"github.com/kompotkot/tripidium/internal/transport/runtime"
 )
 
 type authContextKey string
-
-const (
-	authSubjectIDKey   authContextKey = "auth_subject_id"
-	authSubjectKindKey authContextKey = "auth_subject_kind"
-	authSessionIDKey   authContextKey = "auth_session_id"
-	authJTIKey         authContextKey = "auth_jti"
-)
 
 // responseWriter wraps http.ResponseWriter to capture status code and bytes written
 type responseWriter struct {
@@ -110,59 +103,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := withAuthIdentity(r.Context(), identity)
+		ctx := runtime.WithAuthIdentity(r.Context(), identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func withAuthIdentity(ctx context.Context, identity service.AccessTokenIdentity) context.Context {
-	ctx = context.WithValue(ctx, authSubjectIDKey, identity.SubjectID)
-	ctx = context.WithValue(ctx, authSubjectKindKey, identity.SubjectKind)
-	ctx = context.WithValue(ctx, authSessionIDKey, identity.SessionID)
-	ctx = context.WithValue(ctx, authJTIKey, identity.JTI)
-	return ctx
-}
-
-func authSubjectIDFromContext(ctx context.Context) (string, bool) {
-	subjectID, ok := ctx.Value(authSubjectIDKey).(string)
-	if !ok || subjectID == "" {
-		return "", false
-	}
-	return subjectID, true
-}
-
-func authSubjectKindFromContext(ctx context.Context) (string, bool) {
-	subjectKind, ok := ctx.Value(authSubjectKindKey).(string)
-	if !ok || subjectKind == "" {
-		return "", false
-	}
-	return subjectKind, true
-}
-
-func authenticatedUserSubjectIDFromContext(ctx context.Context) (string, bool) {
-	subjectID, ok := authSubjectIDFromContext(ctx)
-	if !ok {
-		return "", false
-	}
-	subjectKind, ok := authSubjectKindFromContext(ctx)
-	if !ok || subjectKind != "user" {
-		return "", false
-	}
-	return subjectID, true
-}
-
-func authSessionIDFromContext(ctx context.Context) (string, bool) {
-	sessionID, ok := ctx.Value(authSessionIDKey).(string)
-	if !ok || sessionID == "" {
-		return "", false
-	}
-	return sessionID, true
-}
-
-func authJTIFromContext(ctx context.Context) (string, bool) {
-	jti, ok := ctx.Value(authJTIKey).(string)
-	if !ok || jti == "" {
-		return "", false
-	}
-	return jti, true
 }

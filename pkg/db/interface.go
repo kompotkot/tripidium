@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kompotkot/tripidium/pkg/iam"
+	"github.com/kompotkot/tripidium/internal/model"
 
 	"github.com/google/uuid"
 )
@@ -21,11 +21,11 @@ type Database interface {
 	// --- Users ---
 
 	// CreateUser creates a new user
-	CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error)
+	CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (model.User, error)
 	// GetUser returns the user by ID, username, or email.
-	GetUser(ctx context.Context, userID, username, email string) (iam.User, error)
+	GetUser(ctx context.Context, userID, username, email string) (model.User, error)
 	// UpdateUser updates profile fields
-	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error)
+	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error)
 	// UpdateUserPassword sets a new password hash (PUT /user/password)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error
 
@@ -37,15 +37,15 @@ type Database interface {
 	// --- Auth sessions ---
 
 	// CreateAuthSession creates a session after login
-	CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
+	CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error)
 	// GetAuthSession returns a session by ID
-	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error)
+	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (model.AuthSession, error)
 	// GetAuthSessionByRefreshToken returns a session by refresh token hash
-	GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error)
+	GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (model.AuthSession, error)
 	// RefreshAuthSession atomically rotates a refresh-token session and returns new session
-	RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
+	RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error)
 	// ListAuthSessions returns all sessions for a subject
-	ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]iam.AuthSession, error)
+	ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]model.AuthSession, error)
 	// RevokeAuthSession revokes one session, optionally marking it replaced by another
 	RevokeAuthSession(ctx context.Context, sessionID, subjectID uuid.UUID, reason string, replacedBy *uuid.UUID) error
 	// RevokeAllAuthSessions revokes every session for a subject

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kompotkot/tripidium/pkg/iam"
+	"github.com/kompotkot/tripidium/internal/model"
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
@@ -91,20 +91,20 @@ func (s *SqliteDB) Close() error {
 	return nil
 }
 
-func (s *SqliteDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (model.User, error) {
+	return model.User{}, nil
 }
 
-func (s *SqliteDB) GetUser(ctx context.Context, userID, username, email string) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) GetUser(ctx context.Context, userID, username, email string) (model.User, error) {
+	return model.User{}, nil
 }
 
-func (s *SqliteDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+func (s *SqliteDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
 }
 
-func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error) {
+	return model.User{}, nil
 }
 
 func (s *SqliteDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
@@ -119,19 +119,19 @@ func (s *SqliteDB) ClaimUserInvite(ctx context.Context, inviteCode string, userI
 	return nil
 }
 
-func (s *SqliteDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+func (s *SqliteDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
 }
 
-func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
 }
 
-func (s *SqliteDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+func (s *SqliteDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
 }
 
-func (s *SqliteDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]iam.AuthSession, error) {
+func (s *SqliteDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]model.AuthSession, error) {
 	return nil, nil
 }
 

@@ -1,67 +1,31 @@
-package server
+package auth
 
 import (
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kompotkot/tripidium/internal/model"
 	"github.com/kompotkot/tripidium/internal/service"
+	"github.com/kompotkot/tripidium/internal/transport/runtime"
 	"github.com/kompotkot/tripidium/pkg/db"
+	"github.com/kompotkot/tripidium/pkg/dto"
 )
 
-// Extensible handlers interface
-type Handlers interface {
-	Ping(w http.ResponseWriter, r *http.Request)
-	Health(w http.ResponseWriter, r *http.Request)
-
-	AuthSignUp(w http.ResponseWriter, r *http.Request)
-	AuthLogin(w http.ResponseWriter, r *http.Request)
-	AuthRefresh(w http.ResponseWriter, r *http.Request)
-	AuthLogout(w http.ResponseWriter, r *http.Request)
-	AuthSessionsList(w http.ResponseWriter, r *http.Request)
-	AuthSessionsRevokeAll(w http.ResponseWriter, r *http.Request)
-	AuthSessionRevokeOne(w http.ResponseWriter, r *http.Request)
-
-	GetUser(w http.ResponseWriter, r *http.Request)
-	UserPatch(w http.ResponseWriter, r *http.Request)
-	UserPasswordPut(w http.ResponseWriter, r *http.Request)
+type Handler struct {
+	deps runtime.Dependencies
 }
 
-// handlers holds handlers with dependencies
-type handlers struct {
-	deps Dependencies
-}
-
-// NewHandlers creates a new handlers instance with dependencies
-func NewHandlers(deps Dependencies) Handlers {
-	return &handlers{deps: deps}
-}
-
-// Ping handles the ping-pong endpoint
-func (h *handlers) Ping(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("pong"))
-}
-
-// Health returns a minimal service health payload with response time
-func (h *handlers) Health(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	body := map[string]any{
-		"status": "ok",
-		// TODO(kompotkot): move such settings to configuration
-		"response_time_ms": time.Since(start).Milliseconds(),
-	}
-	_ = json.NewEncoder(w).Encode(body)
+func NewHandler(deps runtime.Dependencies) *Handler {
+	return &Handler{deps: deps}
 }
 
 // SignUp handles new user registrations
-func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.deps.Log.Error("signup_parse_failed", "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
@@ -154,11 +118,7 @@ func (h *handlers) AuthSignUp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
-func notImplemented(w http.ResponseWriter) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
-}
-
-func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) AuthLogin(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.deps.Log.Error("login_parse_failed", "error", err)
 		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
@@ -288,7 +248,7 @@ func (h *handlers) AuthLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, ""))
 }
 
-func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(h.deps.Cfg.AuthConfig.RefreshTokenCookieName)
 	if err != nil {
 		http.Error(w, "missing refresh token", http.StatusUnauthorized)
@@ -358,14 +318,14 @@ func (h *handlers) AuthRefresh(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToAuthLoginResponse(accessToken, ""))
 }
 
-func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := authSubjectIDFromContext(r.Context())
+func (h *Handler) AuthLogout(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	sessionIDRaw, ok := authSessionIDFromContext(r.Context())
+	sessionIDRaw, ok := runtime.AuthSessionIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -409,13 +369,13 @@ func (h *handlers) AuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handlers) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := authSubjectIDFromContext(r.Context())
+func (h *Handler) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	currentSessionID, ok := authSessionIDFromContext(r.Context())
+	currentSessionID, ok := runtime.AuthSessionIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -439,208 +399,71 @@ func (h *handlers) AuthSessionsList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToAuthSessionsResponse(sessions, currentSessionID))
 }
 
-func (h *handlers) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request) {
+func notImplemented(w http.ResponseWriter) {
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
+}
+
+func (h *Handler) AuthSessionsRevokeAll(w http.ResponseWriter, _ *http.Request) {
 	notImplemented(w)
 }
 
-func (h *handlers) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) AuthSessionRevokeOne(w http.ResponseWriter, _ *http.Request) {
 	notImplemented(w)
 }
 
-func (h *handlers) GetUser(w http.ResponseWriter, r *http.Request) {
-	subjectID, ok := authenticatedUserSubjectIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+func ToAuthLoginResponse(accessToken, refreshToken string) dto.AuthLoginResponse {
+	return dto.AuthLoginResponse{
+		AccessToken: accessToken,
 	}
-
-	user, err := h.deps.DB.GetUser(r.Context(), subjectID, "", "")
-	if err != nil {
-		if errors.Is(err, db.ErrUserNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h.deps.Log.Error("get_user_failed", "subject_id", subjectID, "error", err)
-		http.Error(w, "Failed to get user", http.StatusInternalServerError)
-		return
-	}
-
-	if !user.IsActive {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToUserResponse(user))
 }
 
-func (h *handlers) UserPatch(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := authenticatedUserSubjectIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+func ToUserResponse(u model.User) dto.UserResponse {
+	user := dto.UserResponse{
+		Id:        u.ID.String(),
+		Username:  u.Username,
+		Email:     u.Email,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
 	}
-
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_patch_parse_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
-		return
+	if u.Phone != nil {
+		p := int(*u.Phone)
+		user.Phone = &p
 	}
-
-	currentUser, err := h.deps.DB.GetUser(r.Context(), subjectIDRaw, "", "")
-	if err != nil {
-		if errors.Is(err, db.ErrUserNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h.deps.Log.Error("user_patch_get_user_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to get user", http.StatusInternalServerError)
-		return
-	}
-	if !currentUser.IsActive {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	username := currentUser.Username
-	email := currentUser.Email
-	phone := currentUser.Phone
-
-	if _, provided := r.Form["username"]; provided {
-		username, err = service.ValidateUsername(r.FormValue("username"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	if _, provided := r.Form["email"]; provided {
-		email, err = service.ValidateEmail(r.FormValue("email"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	if _, provided := r.Form["phone"]; provided {
-		phone, err = service.ValidatePhone(r.FormValue("phone"), h.deps.Cfg.IsPhoneRequired)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-
-	if _, hasUsername := r.Form["username"]; !hasUsername {
-		if _, hasEmail := r.Form["email"]; !hasEmail {
-			if _, hasPhone := r.Form["phone"]; !hasPhone {
-				http.Error(w, "At least one field must be provided", http.StatusBadRequest)
-				return
-			}
-		}
-	}
-
-	phoneValue := ""
-	if phone != 0 {
-		phoneValue = strconv.Itoa(phone)
-	}
-
-	updatedUser, err := h.deps.DB.UpdateUser(r.Context(), currentUser.ID, username, email, phoneValue)
-	if err != nil {
-		if errors.Is(err, db.ErrUserAlreadyExists) {
-			http.Error(w, "Username or email already exists", http.StatusConflict)
-			return
-		}
-		if errors.Is(err, db.ErrUserNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h.deps.Log.Error("user_patch_update_failed", "user_id", currentUser.ID.String(), "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to update user", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToUserResponse(updatedUser))
+	return user
 }
 
-func (h *handlers) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw, ok := authenticatedUserSubjectIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+func ToAuthSessionResponse(s model.AuthSession, currentSessionID string) dto.AuthSessionResponse {
+	userAgent := ""
+	if s.CreatedUserAgent != nil {
+		userAgent = strings.TrimSpace(*s.CreatedUserAgent)
 	}
 
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_password_parse_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
-		return
+	return dto.AuthSessionResponse{
+		Id:        s.ID.String(),
+		IsCurrent: s.ID.String() == currentSessionID,
+		CreatedAt: s.CreatedAt,
+		ExpiresAt: s.ExpiresAt,
+		UserAgent: userAgent,
+		IP:        normalizeSessionIP(s.CreatedIP.String()),
 	}
+}
 
-	currentPasswordRaw := r.FormValue("current_password")
-	newPasswordRaw := r.FormValue("new_password")
-	if currentPasswordRaw == "" || newPasswordRaw == "" {
-		http.Error(w, "Current password and new password are required", http.StatusBadRequest)
-		return
+func normalizeSessionIP(raw string) string {
+	ip := strings.TrimSpace(raw)
+	if ip == "" || ip == "<nil>" {
+		return ""
 	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+	return parsed.String()
+}
 
-	currentPassword, err := service.ValidatePassword(currentPasswordRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+func ToAuthSessionsResponse(sessions []model.AuthSession, currentSessionID string) []dto.AuthSessionResponse {
+	out := make([]dto.AuthSessionResponse, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, ToAuthSessionResponse(s, currentSessionID))
 	}
-	newPassword, err := service.ValidatePassword(newPasswordRaw)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	user, err := h.deps.DB.GetUser(r.Context(), subjectIDRaw, "", "")
-	if err != nil {
-		if errors.Is(err, db.ErrUserNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h.deps.Log.Error("user_password_get_user_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to get user", http.StatusInternalServerError)
-		return
-	}
-	if !user.IsActive {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	ok, err = service.VerifyPassword(currentPassword, user.PasswordHash, h.deps.Cfg.AuthConfig)
-	if err != nil {
-		h.deps.Log.Error("user_password_verify_failed", "user_id", user.ID.String(), "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to verify current password", http.StatusInternalServerError)
-		return
-	}
-	if !ok {
-		http.Error(w, "Current password is incorrect", http.StatusBadRequest)
-		return
-	}
-
-	passwordHash, err := service.HashPassword(newPassword, h.deps.Cfg.AuthConfig)
-	if err != nil {
-		h.deps.Log.Error("user_password_hash_failed", "user_id", user.ID.String(), "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to hash new password", http.StatusInternalServerError)
-		return
-	}
-
-	userID := user.ID
-	if userID == uuid.Nil {
-		h.deps.Log.Error("user_password_empty_user_id", "subject_id", subjectIDRaw)
-		http.Error(w, "Invalid user id", http.StatusInternalServerError)
-		return
-	}
-
-	if err := h.deps.DB.UpdateUserPassword(r.Context(), userID, passwordHash); err != nil {
-		if errors.Is(err, db.ErrUserNotFound) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		h.deps.Log.Error("user_password_update_failed", "user_id", userID.String(), "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to update password", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	return out
 }

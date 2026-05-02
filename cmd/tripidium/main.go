@@ -18,7 +18,7 @@ import (
 
 	"github.com/kompotkot/tripidium/internal/config"
 	"github.com/kompotkot/tripidium/internal/logger"
-	"github.com/kompotkot/tripidium/internal/server"
+	"github.com/kompotkot/tripidium/internal/transport"
 	"github.com/kompotkot/tripidium/pkg/db"
 )
 
@@ -61,7 +61,7 @@ func runServer() error {
 	defer stop()
 
 	// Create HTTP server
-	newSrv := server.NewServer(server.Dependencies{
+	newSrv := transport.NewServer(transport.Dependencies{
 		DB:  database,
 		Cfg: cfg.Server,
 		Log: log,

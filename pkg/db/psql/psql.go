@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kompotkot/tripidium/internal/model"
 	db "github.com/kompotkot/tripidium/pkg/db"
-	"github.com/kompotkot/tripidium/pkg/iam"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -53,10 +53,10 @@ func (p *PsqlDB) Close() error {
 	return nil
 }
 
-func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error) {
+func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (model.User, error) {
 	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return iam.User{}, err
+		return model.User{}, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -65,16 +65,16 @@ func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool
 		VALUES ($1, 'user')
 	`
 	if _, err := tx.Exec(ctx, subjectQuery, userID); err != nil {
-		return iam.User{}, err
+		return model.User{}, err
 	}
 
 	const query = `
 		INSERT INTO users (id, is_active, username, email, password_hash, phone)
 		VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0))
-		RETURNING id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
+		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
 	`
 
-	var user iam.User
+	var user model.User
 	err = tx.QueryRow(ctx, query, userID, isActive, username, email, passwordHash, phone).Scan(
 		&user.ID,
 		&user.IsActive,
@@ -87,30 +87,30 @@ func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.User{}, db.ErrUnexpectedEmptyReturn
+			return model.User{}, db.ErrUnexpectedEmptyReturn
 		}
 
 		// Handle the username uniqueness error
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" { // unique_violation
-				return iam.User{}, db.ErrUserAlreadyExists
+				return model.User{}, db.ErrUserAlreadyExists
 			}
 		}
 
-		return iam.User{}, err
+		return model.User{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return iam.User{}, err
+		return model.User{}, err
 	}
 
 	return user, nil
 }
 
 // GetUser retrieves user from the database by ID, username, or email.
-func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (iam.User, error) {
+func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (model.User, error) {
 	const baseQuery = `
-		SELECT id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
+		SELECT id, is_active, username, email, phone, password_hash, created_at, updated_at
 		FROM users
 	`
 
@@ -131,12 +131,12 @@ func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (i
 	}
 
 	if len(conditions) == 0 {
-		return iam.User{}, fmt.Errorf("GetUser: at least one filter must be provided")
+		return model.User{}, fmt.Errorf("GetUser: at least one filter must be provided")
 	}
 
 	query := baseQuery + " WHERE " + strings.Join(conditions, " AND ")
 
-	var user iam.User
+	var user model.User
 	err := p.pool.QueryRow(ctx, query, args...).Scan(
 		&user.ID,
 		&user.IsActive,
@@ -149,50 +149,50 @@ func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (i
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.User{}, db.ErrUserNotFound
+			return model.User{}, db.ErrUserNotFound
 		}
-		return iam.User{}, err
+		return model.User{}, err
 	}
 
 	return user, nil
 }
 
 // CreateAuthSession creates a session after login
-func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
+func (p *PsqlDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
 	const query = `
 		INSERT INTO auth_sessions (id, subject_id, family_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, subject_id, (SELECT kind FROM subjects WHERE subjects.id = auth_sessions.subject_id), family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
 	`
-	var as iam.AuthSession
+	var as model.AuthSession
 	err := p.pool.QueryRow(ctx, query, sessionID, subjectID, familyID, refreshTokenHash, createdIP, createdUserAgent, expiresAt).Scan(
 		&as.ID, &as.SubjectID, &as.SubjectKind, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
 		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.AuthSession{}, db.ErrUnexpectedEmptyReturn
+			return model.AuthSession{}, db.ErrUnexpectedEmptyReturn
 		}
 
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			// subject_id references subjects(id) foreign_key_violation
 			if pgErr.Code == "23503" {
-				return iam.AuthSession{}, db.ErrUserNotFound
+				return model.AuthSession{}, db.ErrUserNotFound
 			}
 		}
 
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	return as, nil
 }
 
-func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
+func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error) {
 	phoneNumber := 0
 	if strings.TrimSpace(phone) != "" {
 		parsedPhone, err := strconv.Atoi(phone)
 		if err != nil {
-			return iam.User{}, fmt.Errorf("failed to parse phone: %w", err)
+			return model.User{}, fmt.Errorf("failed to parse phone: %w", err)
 		}
 		phoneNumber = parsedPhone
 	}
@@ -201,10 +201,10 @@ func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, ema
 		UPDATE users
 		SET username = $2, email = $3, phone = NULLIF($4, 0)
 		WHERE id = $1
-		RETURNING id, is_active, username, email, COALESCE(phone, 0), password_hash, created_at, updated_at
+		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
 	`
 
-	var user iam.User
+	var user model.User
 	err := p.pool.QueryRow(ctx, query, userID, username, email, phoneNumber).Scan(
 		&user.ID,
 		&user.IsActive,
@@ -217,17 +217,17 @@ func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, ema
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.User{}, db.ErrUserNotFound
+			return model.User{}, db.ErrUserNotFound
 		}
 
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" { // unique_violation
-				return iam.User{}, db.ErrUserAlreadyExists
+				return model.User{}, db.ErrUserAlreadyExists
 			}
 		}
 
-		return iam.User{}, err
+		return model.User{}, err
 	}
 	return user, nil
 }
@@ -267,7 +267,7 @@ func (p *PsqlDB) ClaimUserInvite(ctx context.Context, inviteCode string, userID 
 	return err
 }
 
-func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
+func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (model.AuthSession, error) {
 	const query = `
 		SELECT a.id, a.subject_id, s.kind, a.family_id, a.refresh_token_hash, a.created_ip, a.created_user_agent, a.revoke_reason, a.revoked_at, a.created_at, a.expires_at, a.replaced_by
 		FROM auth_sessions a
@@ -275,21 +275,21 @@ func (p *PsqlDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.A
 		WHERE a.id = $1
 	`
 
-	var as iam.AuthSession
+	var as model.AuthSession
 	err := p.pool.QueryRow(ctx, query, sessionID).Scan(
 		&as.ID, &as.SubjectID, &as.SubjectKind, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
 		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.AuthSession{}, db.ErrTokenNotFound
+			return model.AuthSession{}, db.ErrTokenNotFound
 		}
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	return as, nil
 }
 
-func (p *PsqlDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
+func (p *PsqlDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (model.AuthSession, error) {
 	const query = `
 		SELECT a.id, a.subject_id, s.kind, a.family_id, a.refresh_token_hash, a.created_ip, a.created_user_agent, a.revoke_reason, a.revoked_at, a.created_at, a.expires_at, a.replaced_by
 		FROM auth_sessions a
@@ -297,24 +297,24 @@ func (p *PsqlDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenH
 		WHERE a.refresh_token_hash = $1
 	`
 
-	var as iam.AuthSession
+	var as model.AuthSession
 	err := p.pool.QueryRow(ctx, query, refreshTokenHash).Scan(
 		&as.ID, &as.SubjectID, &as.SubjectKind, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
 		&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.AuthSession{}, db.ErrTokenNotFound
+			return model.AuthSession{}, db.ErrTokenNotFound
 		}
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	return as, nil
 }
 
-func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
+func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
 	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -326,16 +326,16 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 		FOR UPDATE
 	`
 
-	var oldSession iam.AuthSession
+	var oldSession model.AuthSession
 	err = tx.QueryRow(ctx, selectForUpdateQuery, oldRefreshTokenHash).Scan(
 		&oldSession.ID, &oldSession.SubjectID, &oldSession.SubjectKind, &oldSession.FamilyID, &oldSession.RefreshTokenHash, &oldSession.CreatedIP, &oldSession.CreatedUserAgent,
 		&oldSession.RevokeReason, &oldSession.RevokedAt, &oldSession.CreatedAt, &oldSession.ExpiresAt, &oldSession.ReplacedBy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.AuthSession{}, db.ErrTokenNotFound
+			return model.AuthSession{}, db.ErrTokenNotFound
 		}
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 
 	// Check if the session is revoked
@@ -347,12 +347,12 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 			WHERE family_id = $1 AND revoked_at IS NULL
 		`
 		if _, err = tx.Exec(ctx, revokeFamilyQuery, oldSession.FamilyID); err != nil {
-			return iam.AuthSession{}, err
+			return model.AuthSession{}, err
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return iam.AuthSession{}, err
+			return model.AuthSession{}, err
 		}
-		return iam.AuthSession{}, db.ErrTokenReuseDetected
+		return model.AuthSession{}, db.ErrTokenReuseDetected
 	}
 
 	// Check if the session is expired
@@ -365,12 +365,12 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 			WHERE id = $1 AND revoked_at IS NULL
 		`
 		if _, err = tx.Exec(ctx, markExpiredQuery, oldSession.ID); err != nil {
-			return iam.AuthSession{}, err
+			return model.AuthSession{}, err
 		}
 		if err = tx.Commit(ctx); err != nil {
-			return iam.AuthSession{}, err
+			return model.AuthSession{}, err
 		}
-		return iam.AuthSession{}, db.ErrTokenExpired
+		return model.AuthSession{}, db.ErrTokenExpired
 	}
 
 	// Check if the user-backed subject is active
@@ -386,12 +386,12 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 	err = tx.QueryRow(ctx, checkActiveUserQuery, oldSession.SubjectID).Scan(&isUserActive)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return iam.AuthSession{}, db.ErrUserNotFound
+			return model.AuthSession{}, db.ErrUserNotFound
 		}
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	if !isUserActive {
-		return iam.AuthSession{}, db.ErrUserNotFound
+		return model.AuthSession{}, db.ErrUserNotFound
 	}
 
 	// Create a new session
@@ -401,13 +401,13 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, subject_id, (SELECT kind FROM subjects WHERE subjects.id = auth_sessions.subject_id), family_id, refresh_token_hash, created_ip, created_user_agent, revoke_reason, revoked_at, created_at, expires_at, replaced_by
 	`
-	var newSession iam.AuthSession
+	var newSession model.AuthSession
 	err = tx.QueryRow(ctx, createNewSessionQuery, newSessionID, oldSession.SubjectID, oldSession.FamilyID, newRefreshTokenHash, createdIP, createdUserAgent, expiresAt).Scan(
 		&newSession.ID, &newSession.SubjectID, &newSession.SubjectKind, &newSession.FamilyID, &newSession.RefreshTokenHash, &newSession.CreatedIP, &newSession.CreatedUserAgent,
 		&newSession.RevokeReason, &newSession.RevokedAt, &newSession.CreatedAt, &newSession.ExpiresAt, &newSession.ReplacedBy,
 	)
 	if err != nil {
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 
 	// Revoke the old session
@@ -419,20 +419,20 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 	`
 	tag, err := tx.Exec(ctx, revokeRotatedQuery, oldSession.ID, newSessionID)
 	if err != nil {
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 	if tag.RowsAffected() != 1 {
-		return iam.AuthSession{}, db.ErrTokenNotFound
+		return model.AuthSession{}, db.ErrTokenNotFound
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return iam.AuthSession{}, err
+		return model.AuthSession{}, err
 	}
 
 	return newSession, nil
 }
 
-func (p *PsqlDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]iam.AuthSession, error) {
+func (p *PsqlDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]model.AuthSession, error) {
 	const query = `
 		SELECT a.id, a.subject_id, s.kind, a.family_id, a.refresh_token_hash, a.created_ip, a.created_user_agent, a.revoke_reason, a.revoked_at, a.created_at, a.expires_at, a.replaced_by
 		FROM auth_sessions a
@@ -449,9 +449,9 @@ func (p *PsqlDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]i
 	}
 	defer rows.Close()
 
-	sessions := make([]iam.AuthSession, 0)
+	sessions := make([]model.AuthSession, 0)
 	for rows.Next() {
-		var as iam.AuthSession
+		var as model.AuthSession
 		if err := rows.Scan(
 			&as.ID, &as.SubjectID, &as.SubjectKind, &as.FamilyID, &as.RefreshTokenHash, &as.CreatedIP, &as.CreatedUserAgent,
 			&as.RevokeReason, &as.RevokedAt, &as.CreatedAt, &as.ExpiresAt, &as.ReplacedBy,

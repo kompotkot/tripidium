@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/argon2"
 
-	"github.com/kompotkot/tripidium/internal/types"
+	"github.com/kompotkot/tripidium/internal/config"
 )
 
 // ValidateUsername validates the username
@@ -75,7 +75,7 @@ func ValidatePhone(phoneRaw string, isPhoneRequired bool) (int, error) {
 }
 
 // HashPassword securely hashes a password using Argon2 algorithm
-func HashPassword(password string, authConfig types.AuthConfig) (string, error) {
+func HashPassword(password string, authConfig config.AuthConfig) (string, error) {
 	// Generate a random salt for password hashing
 	salt := make([]byte, authConfig.SaltLen)
 	_, err := rand.Read(salt)
@@ -95,7 +95,7 @@ func HashPassword(password string, authConfig types.AuthConfig) (string, error) 
 }
 
 // VerifyPassword checks whether the provided password matches the stored salt$hash value.
-func VerifyPassword(password, passwordHash string, authConfig types.AuthConfig) (bool, error) {
+func VerifyPassword(password, passwordHash string, authConfig config.AuthConfig) (bool, error) {
 	parts := strings.Split(passwordHash, "$")
 	if len(parts) != 2 {
 		return false, fmt.Errorf("invalid stored password hash format")
@@ -163,7 +163,7 @@ func ParseBearerToken(authorizationHeader string) (string, error) {
 }
 
 // VerifyAccessToken verifies signature, header fields, and required claims for access JWT
-func VerifyAccessToken(rawToken string, authConfig types.AuthConfig) (AccessTokenIdentity, error) {
+func VerifyAccessToken(rawToken string, authConfig config.AuthConfig) (AccessTokenIdentity, error) {
 	if strings.TrimSpace(rawToken) == "" {
 		return AccessTokenIdentity{}, fmt.Errorf("%w: empty access token", ErrUnauthorized)
 	}
@@ -251,7 +251,7 @@ func VerifyAccessToken(rawToken string, authConfig types.AuthConfig) (AccessToke
 }
 
 // ParseAndVerifyAccessTokenFromAuthHeader validates Authorization header and JWT
-func ParseAndVerifyAccessTokenFromAuthHeader(authorizationHeader string, authConfig types.AuthConfig) (AccessTokenIdentity, error) {
+func ParseAndVerifyAccessTokenFromAuthHeader(authorizationHeader string, authConfig config.AuthConfig) (AccessTokenIdentity, error) {
 	rawToken, err := ParseBearerToken(authorizationHeader)
 	if err != nil {
 		return AccessTokenIdentity{}, err
@@ -260,7 +260,7 @@ func ParseAndVerifyAccessTokenFromAuthHeader(authorizationHeader string, authCon
 }
 
 // ValidateLengthOfRefreshToken validates an opaque refresh token received from cookie
-func ValidateLengthOfRefreshToken(refreshTokenRaw string, authConfig types.AuthConfig) (string, error) {
+func ValidateLengthOfRefreshToken(refreshTokenRaw string, authConfig config.AuthConfig) (string, error) {
 	refreshToken := strings.TrimSpace(refreshTokenRaw)
 	if refreshToken == "" {
 		return "", fmt.Errorf("%w: empty refresh token", ErrUnauthorized)
@@ -289,7 +289,7 @@ func HashRefreshToken(refreshToken string) string {
 }
 
 // CreateAccessToken creates and signs a short-lived JWT access token.
-func CreateAccessToken(subjectID, sessionID uuid.UUID, subjectKind string, authConfig types.AuthConfig) (string, error) {
+func CreateAccessToken(subjectID, sessionID uuid.UUID, subjectKind string, authConfig config.AuthConfig) (string, error) {
 	now := time.Now().UTC()
 	claims := AccessTokenClaims{
 		SessionID:   sessionID.String(),
@@ -316,7 +316,7 @@ func CreateAccessToken(subjectID, sessionID uuid.UUID, subjectKind string, authC
 }
 
 // CreateRefreshTokenPair creates an opaque refresh token and its DB-safe hash
-func CreateRefreshTokenPair(authConfig types.AuthConfig) (refreshToken string, refreshTokenHash string, err error) {
+func CreateRefreshTokenPair(authConfig config.AuthConfig) (refreshToken string, refreshTokenHash string, err error) {
 	raw := make([]byte, authConfig.RefreshTokenLen)
 	if _, err := rand.Read(raw); err != nil {
 		return "", "", fmt.Errorf("generate refresh token error: %w", err)
