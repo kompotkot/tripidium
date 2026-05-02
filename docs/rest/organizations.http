@@ -1,0 +1,138 @@
+@schema = http
+@hostname = localhost
+@port = 8020
+@host = {{schema}}://{{hostname}}:{{port}}
+# Set @accessToken after running POST /auth/login in auth.http
+@accessToken = <access-token>
+# Set @organizationId after running POST /identity/organizations below,
+# or paste a known organization UUID here.
+@organizationId = 00000000-0000-0000-0000-000000000000
+# Set @memberId to the user UUID of the member to manage.
+@memberId = 00000000-0000-0000-0000-000000000000
+
+# ---------------------------------------------------------------------------
+# IDENTITY — Organizations  (require Authorization header)
+# ---------------------------------------------------------------------------
+
+### List organizations — GET /identity/organizations
+# Returns organizations where the current user-backed subject is a member.
+
+# @name listOrganizations
+GET {{host}}/identity/organizations HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Create organization — POST /identity/organizations
+# Creates an organization subject and assigns the current user as owner.
+# Run this first, then update @organizationId with the returned id.
+
+# @name createOrganization
+POST {{host}}/identity/organizations HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Acme Corp",
+  "description": "Main organization"
+}
+
+###
+
+@organizationId = {{createOrganization.response.body.$.id}}
+
+### Get organization — GET /identity/organizations/{organization_id}
+
+# @name getOrganization
+GET {{host}}/identity/organizations/{{organizationId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Update organization — PATCH /identity/organizations/{organization_id}
+# Requires organization admin or owner role. All fields are optional.
+
+# @name patchOrganization
+PATCH {{host}}/identity/organizations/{{organizationId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Acme Corp Updated",
+  "description": "Updated description"
+}
+
+###
+
+### Delete organization — DELETE /identity/organizations/{organization_id}
+# Requires organization owner role. Cascades to subjects and members.
+
+# @name deleteOrganization
+DELETE {{host}}/identity/organizations/{{organizationId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ---------------------------------------------------------------------------
+# IDENTITY — Organization Memberships  (require Authorization header)
+# ---------------------------------------------------------------------------
+
+### List members — GET /identity/organizations/{organization_id}/memberships
+# Returns all membership records for the organization.
+
+# @name listMembers
+GET {{host}}/identity/organizations/{{organizationId}}/memberships HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Add member — POST /identity/organizations/{organization_id}/memberships
+# Adds a user to the organization with the specified role.
+# Roles: owner | admin | editor | viewer
+# Requires organization admin or owner role.
+
+# @name addMember
+POST {{host}}/identity/organizations/{{organizationId}}/memberships HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "role": "editor"
+}
+
+###
+
+@memberId = {{addMember.response.body.$.user_id}}
+
+### Get member — GET /identity/organizations/{organization_id}/memberships/{user_id}
+# Returns membership details for the specified user in the organization.
+
+# @name getMember
+GET {{host}}/identity/organizations/{{organizationId}}/memberships/{{memberId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Update member role — PATCH /identity/organizations/{organization_id}/memberships/{user_id}
+# Updates the role for the specified user. Requires admin or owner.
+# Roles: owner | admin | editor | viewer
+
+# @name updateMemberRole
+PATCH {{host}}/identity/organizations/{{organizationId}}/memberships/{{memberId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "role": "admin"
+}
+
+###
+
+### Remove member — DELETE /identity/organizations/{organization_id}/memberships/{user_id}
+# Removes the specified user from the organization.
+# Requires organization admin or owner role.
+
+# @name removeMember
+DELETE {{host}}/identity/organizations/{{organizationId}}/memberships/{{memberId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}

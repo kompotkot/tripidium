@@ -1,0 +1,82 @@
+@schema = http
+@hostname = localhost
+@port = 8020
+@host = {{schema}}://{{hostname}}:{{port}}
+# Set @accessToken after running POST /auth/login in auth.http
+@accessToken = eyJhbGciOiJFZERTQSIsImtpZCI6ImVkMjU1MTktdjEiLCJ0eXAiOiJhY2Nlc3Mrand0In0.eyJzaWQiOiI1OTUyZGRiNy1kOTVjLTQxNjQtOTMxOC0xYmQ0ZTI5NjNiNjEiLCJzayI6InVzZXIiLCJpc3MiOiJhdXRoLnNiMHJrYSIsInN1YiI6IjVlODkxODhiLTllYjQtNDhkOS05ZDFmLWM1NWRlMTIyN2I2ZiIsImF1ZCI6WyJhcGkuc2IwcmthIl0sImV4cCI6MTc3ODA1NjAwMCwiaWF0IjoxNzc3NzU2MDAwLCJqdGkiOiJiOThkMjNjYi1hZmY5LTQ5MTAtOWRlNS1hYjAyNGNlNDZjY2QifQ.T-63appp4nMEC35xuAK428A8QJJQhSZl-okXmjNSXixztBfSB6ImFsfOueyYLQ9yTwZBUzdWVmRPiMux29DNCA
+
+# ---------------------------------------------------------------------------
+# IDENTITY — Users
+# ---------------------------------------------------------------------------
+
+### Register user — POST /identity/users
+# Creates a new user-backed subject. No authentication required.
+
+# @name registerUser
+POST {{host}}/identity/users HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "ksenia",
+  "email": "ksenia@example.com",
+  "password": "secret123!"
+}
+
+###
+
+### Register user (with invite) — POST /identity/users
+# Use this variant when IsInviteRequired is enabled on the server.
+
+# @name registerUserWithInvite
+POST {{host}}/identity/users HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "sergei",
+  "email": "sergei@example.com",
+  "password": "secret123!",
+  "invite_code": "INVITE-CODE-HERE"
+}
+
+###
+
+# ---------------------------------------------------------------------------
+# IDENTITY — Current user profile  (require Authorization header)
+# ---------------------------------------------------------------------------
+
+### Get current user — GET /identity/users/current
+# Returns the user profile for the current user-backed subject.
+
+# @name getCurrentUser
+GET {{host}}/identity/users/current HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Update current user — PATCH /identity/users/current
+# Updates editable user profile fields. All fields are optional.
+
+# @name patchCurrentUser
+PATCH {{host}}/identity/users/current HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "username": "ksenia2",
+  "email": "ksenia2@example.com"
+}
+
+###
+
+### Change password — PUT /identity/users/current/password
+# Changes the password for the current user-backed subject.
+
+# @name changePassword
+PUT {{host}}/identity/users/current/password HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "current_password": "secret123!",
+  "new_password": "newSecret456!"
+}
