@@ -13,15 +13,19 @@ type OrganizationUpdateRequest struct {
 }
 
 type OrganizationResponse struct {
-	Id          string    `json:"id"`
+	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type OrganizationListResponse struct {
+	Organizations []OrganizationResponse `json:"organizations"`
+}
+
 type OrganizationMemberCreateRequest struct {
-	UserId string `json:"user_id"`
+	UserID string `json:"user_id"`
 	Role   string `json:"role"`
 }
 
@@ -29,13 +33,9 @@ type OrganizationMemberUpdateRequest struct {
 	Role string `json:"role"`
 }
 
-type OrganizationMemberDeleteRequest struct {
-	UserId string `json:"user_id"`
-}
-
 type OrganizationMemberResponse struct {
-	UserId         string    `json:"user_id"`
-	OrganizationId string    `json:"organization_id"`
+	UserID         string    `json:"user_id"`
+	OrganizationID string    `json:"organization_id"`
 	Role           string    `json:"role"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`

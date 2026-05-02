@@ -2,10 +2,18 @@ package dto
 
 import "time"
 
+type RegisterUserRequest struct {
+	Username   string  `json:"username"`
+	Email      string  `json:"email"`
+	Password   string  `json:"password"`
+	Phone      *string `json:"phone,omitempty"`
+	InviteCode *string `json:"invite_code,omitempty"`
+}
+
 type UserUpdateRequest struct {
 	Username *string `json:"username,omitempty"`
 	Email    *string `json:"email,omitempty"`
-	Phone    *int    `json:"phone,omitempty"`
+	Phone    *string `json:"phone,omitempty"`
 }
 
 type UserPasswordPutRequest struct {
@@ -14,10 +22,10 @@ type UserPasswordPutRequest struct {
 }
 
 type UserResponse struct {
-	Id        string    `json:"id"`
+	ID        string    `json:"id"`
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
-	Phone     *int      `json:"phone,omitempty"`
+	Phone     *string   `json:"phone,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
