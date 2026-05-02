@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS organization_members (
     user_id UUID NOT NULL,
     organization_id UUID NOT NULL,
 
-    role VARCHAR(8) NOT NULL,
+    role VARCHAR(6) NOT NULL,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,

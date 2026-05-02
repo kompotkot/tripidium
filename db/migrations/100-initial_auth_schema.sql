@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     subject_id UUID NOT NULL, 
     family_id UUID DEFAULT gen_random_uuid() NOT NULL, 
     refresh_token_hash VARCHAR(255) NOT NULL, 
-    created_ip VARCHAR(45) NOT NULL, 
+    created_ip INET NOT NULL, 
     created_user_agent VARCHAR(1024), 
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
@@ -86,15 +86,17 @@ BEFORE UPDATE ON auth_sessions
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX IF NOT EXISTS ix_auth_sessions_replaced_by ON auth_sessions (replaced_by);
+CREATE INDEX IF NOT EXISTS ix_auth_sess_replaced_by ON auth_sessions (replaced_by);
 
-CREATE INDEX IF NOT EXISTS ix_auth_sessions_subject_created_at ON auth_sessions (subject_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_auth_sess_subject_created_at ON auth_sessions (subject_id, created_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_famid_rev_at ON auth_sessions (family_id, revoked_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_sess_family_active ON auth_sessions (family_id) WHERE revoked_at IS NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sessions_subject_id_revoked_at ON auth_sessions (subject_id, revoked_at);
+CREATE INDEX IF NOT EXISTS ix_auth_sess_subject_active ON auth_sessions (subject_id) WHERE revoked_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_rf_tok_hsh ON auth_sessions (refresh_token_hash);
+
+CREATE INDEX IF NOT EXISTS ix_auth_sess_active_expires_at ON auth_sessions (expires_at) WHERE revoked_at IS NULL;
 
 WITH updated AS (
     UPDATE version_auth
