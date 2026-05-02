@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	_ "embed"
 	"encoding/base64"
 	"encoding/pem"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +23,11 @@ import (
 	"github.com/kompotkot/tripidium/internal/transport"
 	"github.com/kompotkot/tripidium/pkg/db"
 )
+
+//go:embed version.txt
+var versionFile string
+
+var TripidiumVersion = strings.TrimSpace(versionFile)
 
 // runServer initializes dependencies, starts the HTTP server, and handles graceful shutdown
 func runServer() error {
@@ -189,9 +196,25 @@ func tokenCMD(args []string) error {
 	return runToken(fileName)
 }
 
-// usageCMD writes the list of available commands to the provided output stream
+func versionCMD(args []string) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintln(os.Stdout, TripidiumVersion)
+	return err
+}
+
 func usageCMD(w *os.File) {
-	fmt.Fprintln(w, "Use one of command: server, token")
+	fmt.Fprintln(w, "Usage: drones <command> [flags]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  server    Run API server")
+	fmt.Fprintln(w, "  token     Generate token private key")
+	fmt.Fprintln(w, "  version   Print drones version")
 }
 
 // run routes top-level CLI arguments to the appropriate subcommand handler
@@ -206,6 +229,8 @@ func run(args []string) error {
 		return serverCMD(args[1:])
 	case "token":
 		return tokenCMD(args[1:])
+	case "version":
+		return versionCMD(args[1:])
 	case "-h", "--help", "help":
 		usageCMD(os.Stdout)
 		return nil
