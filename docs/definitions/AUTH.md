@@ -140,6 +140,8 @@ Delegated/contextual token issuance rules:
 - the authorization decision and resulting token must be audit logged
 - clients must not be allowed to choose an arbitrary `sub` without this server-side check
 
+> Delegated/contextual tokens are reserved for a future version. Current implementation MUST issue tokens only with `sub = authenticated_subject_id`.
+
 For a service account:
 
 ```text
@@ -174,6 +176,8 @@ Alternatively, RFC-style actor semantics may be represented as:
 For the initial implementation, Auth may simplify this to `sub = authenticated subject` while preserving the terminology for future organization context, service accounts, impersonation, and delegation.
 
 ### Resource-Scoped Authorization Token
+
+> Reserved for a future version. Current implementation issues identity access tokens only.
 
 Resource-scoped tokens are short-lived authorization tokens issued after checking that the subject has access to a specific external resource. They are separate from the regular identity access token.
 
@@ -277,6 +281,8 @@ Implementation split:
 - Middleware validates JWT without database access.
 - Middleware stores subject identity claims in request context.
 - Handlers perform database queries when they need current subject, profile, or session state.
+
+Middleware does not check `auth_sessions.revoked_at`. A valid access token may remain usable until `exp` unless the endpoint performs a session-state check.
 
 ## Authorization Boundary
 
@@ -383,7 +389,7 @@ Current implementation note:
 
 ### `GET /auth/subject`
 
-`GET /auth/subject` is the generic identity endpoint for the current subject. `GET /auth/me` is also acceptable if the API chooses that name.
+`GET /auth/subject` is the canonical generic identity endpoint for the current authenticated subject.
 
 Recommended flow:
 
@@ -454,20 +460,11 @@ Safe service account subject response:
 }
 ```
 
-### `GET /user`
+Service account subject responses are reserved for a future schema version. Current implementation MUST reject `service_account`, `system_actor`, and `external_identity` subjects until the corresponding schema and credential model exist.
 
-`GET /user` may remain as a convenience endpoint, but it is user-specific. It must only work when the current subject kind is `user`.
+### `GET /identity/users/current`
 
-Recommended flow:
-
-1. Validate access JWT using the same checks as `GET /auth/subject`.
-2. Extract `sub` as `subject_id`.
-3. Verify `sk == user`.
-4. Load the user profile for the user-backed subject.
-5. Verify that the user exists and `is_active = true`.
-6. Return user data.
-
-If the current subject is not a user-backed subject, return `403 Forbidden` or `404 Not Found` according to the selected policy.
+User profile endpoint. Only works when the current subject kind is `user`. Returns user profile data for the current user-backed subject. If the current subject is not user-backed, return `403 Forbidden`.
 
 ### `POST /auth/refresh`
 
