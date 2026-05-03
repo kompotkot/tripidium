@@ -3,10 +3,6 @@
 @port = 8020
 @host = {{schema}}://{{hostname}}:{{port}}
 
-# ---------------------------------------------------------------------------
-# AUTH — Login & Token Rotation
-# ---------------------------------------------------------------------------
-
 ### Login — POST /auth/login
 # Authenticates a user and creates an auth session.
 # Sets the refresh_token cookie and returns an access token.
@@ -14,9 +10,13 @@
 
 # @name login
 POST {{host}}/auth/login HTTP/1.1
-Content-Type: application/x-www-form-urlencoded
+Content-Type: application/json
 
-email=ksenia@example.com&password=secret123!
+{
+	"username": "ksenia",
+	"email": "ksenia@example.com",
+	"password": "secret123!"
+}
 
 ###
 
@@ -30,10 +30,6 @@ email=ksenia@example.com&password=secret123!
 POST {{host}}/auth/refresh HTTP/1.1
 
 ###
-
-# ---------------------------------------------------------------------------
-# AUTH — Subject & Sessions  (require Authorization header)
-# ---------------------------------------------------------------------------
 
 ### Get current subject — GET /auth/subject
 # Returns the current authenticated subject identity and typed profile.

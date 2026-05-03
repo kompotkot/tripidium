@@ -10,10 +10,6 @@
 # Set @memberId to the user UUID of the member to manage.
 @memberId = 00000000-0000-0000-0000-000000000000
 
-# ---------------------------------------------------------------------------
-# IDENTITY — Organizations  (require Authorization header)
-# ---------------------------------------------------------------------------
-
 ### List organizations — GET /identity/organizations
 # Returns organizations where the current user-backed subject is a member.
 
@@ -33,7 +29,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "name": "Acme Corp",
+  "name": "My Team",
   "description": "Main organization"
 }
 
@@ -58,7 +54,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "name": "Acme Corp Updated",
+  "name": "My Team Updated",
   "description": "Updated description"
 }
 
@@ -72,10 +68,6 @@ DELETE {{host}}/identity/organizations/{{organizationId}} HTTP/1.1
 Authorization: Bearer {{accessToken}}
 
 ###
-
-# ---------------------------------------------------------------------------
-# IDENTITY — Organization Memberships  (require Authorization header)
-# ---------------------------------------------------------------------------
 
 ### List members — GET /identity/organizations/{organization_id}/memberships
 # Returns all membership records for the organization.
@@ -116,6 +108,8 @@ Authorization: Bearer {{accessToken}}
 
 ### Update member role — PATCH /identity/organizations/{organization_id}/memberships/{user_id}
 # Updates the role for the specified user. Requires admin or owner.
+# Only owners may assign or revoke the owner role.
+# Demoting the last owner is rejected.
 # Roles: owner | admin | editor | viewer
 
 # @name updateMemberRole
@@ -132,6 +126,8 @@ Content-Type: application/json
 ### Remove member — DELETE /identity/organizations/{organization_id}/memberships/{user_id}
 # Removes the specified user from the organization.
 # Requires organization admin or owner role.
+# Removing an owner requires owner role.
+# Removing the last owner is rejected.
 
 # @name removeMember
 DELETE {{host}}/identity/organizations/{{organizationId}}/memberships/{{memberId}} HTTP/1.1
