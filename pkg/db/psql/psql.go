@@ -19,12 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PsqlDB represents a PostgreSQL database connection
 type PsqlDB struct {
 	pool *pgxpool.Pool
 }
 
-// NewPsqlDB creates a new PostgreSQL database connection
 func NewPsqlDB(uri string, maxConns int, connMaxLifetime time.Duration) (*PsqlDB, error) {
 	pool, err := pgxpool.New(context.Background(), uri)
 	if err != nil {
@@ -37,7 +35,6 @@ func NewPsqlDB(uri string, maxConns int, connMaxLifetime time.Duration) (*PsqlDB
 	return &PsqlDB{pool: pool}, nil
 }
 
-// TestConnection tests the database connection with a timeout
 func (p *PsqlDB) TestConnection(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -45,7 +42,6 @@ func (p *PsqlDB) TestConnection(ctx context.Context) error {
 	return p.pool.Ping(ctx)
 }
 
-// Close closes the database connection pool
 func (p *PsqlDB) Close() error {
 	if p.pool != nil {
 		p.pool.Close()
@@ -107,7 +103,6 @@ func (p *PsqlDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool
 	return user, nil
 }
 
-// GetUser retrieves user from the database by ID, username, or email.
 func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (model.User, error) {
 	const baseQuery = `
 		SELECT id, is_active, username, email, phone, password_hash, created_at, updated_at
@@ -134,7 +129,7 @@ func (p *PsqlDB) GetUser(ctx context.Context, userID, username, email string) (m
 		return model.User{}, fmt.Errorf("GetUser: at least one filter must be provided")
 	}
 
-	query := baseQuery + " WHERE " + strings.Join(conditions, " AND ")
+	query := baseQuery + " WHERE " + strings.Join(conditions, " AND ") + " AND is_active = true"
 
 	var user model.User
 	err := p.pool.QueryRow(ctx, query, args...).Scan(
@@ -200,7 +195,7 @@ func (p *PsqlDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, ema
 	const query = `
 		UPDATE users
 		SET username = $2, email = $3, phone = NULLIF($4, 0)
-		WHERE id = $1
+		WHERE id = $1 AND is_active = true
 		RETURNING id, is_active, username, email, phone, password_hash, created_at, updated_at
 	`
 
@@ -236,7 +231,7 @@ func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passw
 	const query = `
 		UPDATE users
 		SET password_hash = $2
-		WHERE id = $1
+		WHERE id = $1 AND is_active = true
 	`
 	tag, err := p.pool.Exec(ctx, query, userID, passwordHash)
 	if err != nil {
@@ -246,6 +241,38 @@ func (p *PsqlDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passw
 		return db.ErrUserNotFound
 	}
 	return nil
+}
+
+func (p *PsqlDB) DeactivateUser(ctx context.Context, userID uuid.UUID) error {
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	const deactivateQuery = `
+		UPDATE users
+		SET is_active = false
+		WHERE id = $1 AND is_active = true
+	`
+	tag, err := tx.Exec(ctx, deactivateQuery, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrUserNotFound
+	}
+
+	const revokeSessionsQuery = `
+		UPDATE auth_sessions
+		SET revoked_at = NOW(), revoke_reason = 'user_deactivated'
+		WHERE subject_id = $1 AND revoked_at IS NULL
+	`
+	if _, err := tx.Exec(ctx, revokeSessionsQuery, userID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (p *PsqlDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
@@ -394,7 +421,25 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 		return model.AuthSession{}, db.ErrUserNotFound
 	}
 
-	// Create a new session
+	// Step 1: Revoke the old session without setting replaced_by yet.
+	// replaced_by references auth_sessions(id), so the new session must exist first.
+	// Revoking here clears the unique partial index (family_id WHERE revoked_at IS NULL)
+	// so the subsequent INSERT does not violate uq_auth_sess_family_active.
+
+	const revokeRotatedQuery = `
+		UPDATE auth_sessions
+		SET revoked_at = NOW(), revoke_reason = 'rotated'
+		WHERE id = $1 AND revoked_at IS NULL
+	`
+	tag, err := tx.Exec(ctx, revokeRotatedQuery, oldSession.ID)
+	if err != nil {
+		return model.AuthSession{}, err
+	}
+	if tag.RowsAffected() != 1 {
+		return model.AuthSession{}, db.ErrTokenNotFound
+	}
+
+	// Step 2: Insert the new session. The family slot is now free.
 
 	const createNewSessionQuery = `
 		INSERT INTO auth_sessions (id, subject_id, family_id, refresh_token_hash, created_ip, created_user_agent, expires_at)
@@ -410,19 +455,15 @@ func (p *PsqlDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash str
 		return model.AuthSession{}, err
 	}
 
-	// Revoke the old session
+	// Step 3: Back-fill replaced_by on the old session now that the new row exists.
 
-	const revokeRotatedQuery = `
+	const backfillReplacedByQuery = `
 		UPDATE auth_sessions
-		SET revoked_at = NOW(), revoke_reason = 'rotated', replaced_by = $2
-		WHERE id = $1 AND revoked_at IS NULL
+		SET replaced_by = $2
+		WHERE id = $1
 	`
-	tag, err := tx.Exec(ctx, revokeRotatedQuery, oldSession.ID, newSessionID)
-	if err != nil {
+	if _, err = tx.Exec(ctx, backfillReplacedByQuery, oldSession.ID, newSessionID); err != nil {
 		return model.AuthSession{}, err
-	}
-	if tag.RowsAffected() != 1 {
-		return model.AuthSession{}, db.ErrTokenNotFound
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -523,6 +564,15 @@ func (p *PsqlDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name s
 	}
 	defer tx.Rollback(ctx)
 
+	const checkOwnerQuery = `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND is_active = true)`
+	var ownerActive bool
+	if err := tx.QueryRow(ctx, checkOwnerQuery, ownerUserID).Scan(&ownerActive); err != nil {
+		return model.Organization{}, err
+	}
+	if !ownerActive {
+		return model.Organization{}, db.ErrUserNotFound
+	}
+
 	const subjectQuery = `INSERT INTO subjects (id, kind) VALUES ($1, 'organization')`
 	if _, err := tx.Exec(ctx, subjectQuery, orgID); err != nil {
 		return model.Organization{}, err
@@ -554,7 +604,28 @@ func (p *PsqlDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name s
 	return org, nil
 }
 
-func (p *PsqlDB) GetOrganization(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
+func (p *PsqlDB) GetOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) (model.Organization, error) {
+	const query = `
+		SELECT o.id, o.name, o.description, o.created_at, o.updated_at
+		FROM organizations o
+		JOIN organization_members m ON m.organization_id = o.id
+		JOIN users u ON u.id = m.user_id AND u.is_active = true
+		WHERE o.id = $1 AND m.user_id = $2
+	`
+	var org model.Organization
+	err := p.pool.QueryRow(ctx, query, orgID, memberUserID).Scan(
+		&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Organization{}, db.ErrOrganizationNotFound
+		}
+		return model.Organization{}, err
+	}
+	return org, nil
+}
+
+func (p *PsqlDB) GetOrganizationByID(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
 	const query = `
 		SELECT id, name, description, created_at, updated_at
 		FROM organizations
@@ -578,6 +649,7 @@ func (p *PsqlDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]mod
 		SELECT o.id, o.name, o.description, o.created_at, o.updated_at
 		FROM organizations o
 		JOIN organization_members m ON m.organization_id = o.id
+		JOIN users u ON u.id = m.user_id AND u.is_active = true
 		WHERE m.user_id = $1
 		ORDER BY o.created_at DESC
 	`
@@ -598,17 +670,19 @@ func (p *PsqlDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]mod
 	return orgs, rows.Err()
 }
 
-func (p *PsqlDB) UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *string, description *string) (model.Organization, error) {
+func (p *PsqlDB) UpdateOrganization(ctx context.Context, orgID, memberUserID uuid.UUID, name *string, description *string) (model.Organization, error) {
 	const query = `
-		UPDATE organizations
+		UPDATE organizations o
 		SET
 			name = COALESCE($2, name),
 			description = COALESCE($3, description)
-		WHERE id = $1
-		RETURNING id, name, description, created_at, updated_at
+		FROM organization_members m
+		JOIN users u ON u.id = m.user_id AND u.is_active = true
+		WHERE o.id = $1 AND m.organization_id = o.id AND m.user_id = $4
+		RETURNING o.id, o.name, o.description, o.created_at, o.updated_at
 	`
 	var org model.Organization
-	err := p.pool.QueryRow(ctx, query, orgID, name, description).Scan(
+	err := p.pool.QueryRow(ctx, query, orgID, name, description, memberUserID).Scan(
 		&org.ID, &org.Name, &org.Description, &org.CreatedAt, &org.UpdatedAt,
 	)
 	if err != nil {
@@ -620,10 +694,19 @@ func (p *PsqlDB) UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *
 	return org, nil
 }
 
-func (p *PsqlDB) DeleteOrganization(ctx context.Context, orgID uuid.UUID) error {
-	// Deleting the subject cascades to organizations (ON DELETE CASCADE) and then to organization_members.
-	const query = `DELETE FROM subjects WHERE id = $1`
-	tag, err := p.pool.Exec(ctx, query, orgID)
+func (p *PsqlDB) DeleteOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) error {
+	const query = `
+		DELETE FROM subjects s
+		WHERE s.id = $1
+			AND s.kind = 'organization'
+			AND EXISTS (
+				SELECT 1
+				FROM organization_members m
+				JOIN users u ON u.id = m.user_id AND u.is_active = true
+				WHERE m.organization_id = s.id AND m.user_id = $2
+			)
+	`
+	tag, err := p.pool.Exec(ctx, query, orgID, memberUserID)
 	if err != nil {
 		return err
 	}
@@ -633,14 +716,16 @@ func (p *PsqlDB) DeleteOrganization(ctx context.Context, orgID uuid.UUID) error 
 	return nil
 }
 
-func (p *PsqlDB) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]model.OrganizationMember, error) {
+func (p *PsqlDB) ListOrganizationMembers(ctx context.Context, orgID, memberUserID uuid.UUID) ([]model.OrganizationMember, error) {
 	const query = `
-		SELECT user_id, organization_id, role, created_at, updated_at
-		FROM organization_members
-		WHERE organization_id = $1
-		ORDER BY created_at
+		SELECT m.user_id, m.organization_id, m.role, m.created_at, m.updated_at
+		FROM organization_members m
+		JOIN organization_members caller ON caller.organization_id = m.organization_id
+		JOIN users u ON u.id = caller.user_id AND u.is_active = true
+		WHERE m.organization_id = $1 AND caller.user_id = $2
+		ORDER BY m.created_at
 	`
-	rows, err := p.pool.Query(ctx, query, orgID)
+	rows, err := p.pool.Query(ctx, query, orgID, memberUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -657,26 +742,31 @@ func (p *PsqlDB) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) (
 	return members, rows.Err()
 }
 
-func (p *PsqlDB) AddOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+func (p *PsqlDB) AddOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
 	const query = `
 		INSERT INTO organization_members (user_id, organization_id, role)
-		VALUES ($1, $2, $3)
+		SELECT target.id, $2, $3
+		FROM users target
+		JOIN organization_members caller ON caller.organization_id = $2 AND caller.user_id = $4
+		JOIN users caller_user ON caller_user.id = caller.user_id AND caller_user.is_active = true
+		WHERE target.id = $1 AND target.is_active = true
 		RETURNING user_id, organization_id, role, created_at, updated_at
 	`
 	var m model.OrganizationMember
-	err := p.pool.QueryRow(ctx, query, userID, orgID, role).Scan(
+	err := p.pool.QueryRow(ctx, query, userID, orgID, role, memberUserID).Scan(
 		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return model.OrganizationMember{}, db.ErrUnexpectedEmptyReturn
+			// No row: either the target user does not exist or is inactive
+			return model.OrganizationMember{}, db.ErrUserNotFound
 		}
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
 			case "23505": // unique_violation
 				return model.OrganizationMember{}, db.ErrOrganizationMemberAlreadyExists
-			case "23503": // foreign_key_violation
+			case "23503": // foreign_key_violation (org does not exist)
 				return model.OrganizationMember{}, db.ErrUserNotFound
 			}
 		}
@@ -685,14 +775,17 @@ func (p *PsqlDB) AddOrganizationMember(ctx context.Context, orgID uuid.UUID, use
 	return m, nil
 }
 
-func (p *PsqlDB) GetOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) (model.OrganizationMember, error) {
+func (p *PsqlDB) GetOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) (model.OrganizationMember, error) {
 	const query = `
-		SELECT user_id, organization_id, role, created_at, updated_at
-		FROM organization_members
-		WHERE user_id = $1 AND organization_id = $2
+		SELECT m.user_id, m.organization_id, m.role, m.created_at, m.updated_at
+		FROM organization_members m
+		JOIN users target_user ON target_user.id = m.user_id AND target_user.is_active = true
+		JOIN organization_members caller ON caller.organization_id = m.organization_id
+		JOIN users caller_user ON caller_user.id = caller.user_id AND caller_user.is_active = true
+		WHERE m.user_id = $1 AND m.organization_id = $2 AND caller.user_id = $3
 	`
 	var m model.OrganizationMember
-	err := p.pool.QueryRow(ctx, query, userID, orgID).Scan(
+	err := p.pool.QueryRow(ctx, query, userID, orgID, memberUserID).Scan(
 		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
@@ -704,15 +797,20 @@ func (p *PsqlDB) GetOrganizationMember(ctx context.Context, orgID uuid.UUID, use
 	return m, nil
 }
 
-func (p *PsqlDB) UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+func (p *PsqlDB) UpdateOrganizationMemberRole(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
 	const query = `
-		UPDATE organization_members
+		UPDATE organization_members m
 		SET role = $3
-		WHERE user_id = $1 AND organization_id = $2
-		RETURNING user_id, organization_id, role, created_at, updated_at
+		FROM organization_members caller
+		JOIN users u ON u.id = caller.user_id AND u.is_active = true
+		WHERE m.user_id = $1
+			AND m.organization_id = $2
+			AND caller.organization_id = m.organization_id
+			AND caller.user_id = $4
+		RETURNING m.user_id, m.organization_id, m.role, m.created_at, m.updated_at
 	`
 	var m model.OrganizationMember
-	err := p.pool.QueryRow(ctx, query, userID, orgID, role).Scan(
+	err := p.pool.QueryRow(ctx, query, userID, orgID, role, memberUserID).Scan(
 		&m.UserID, &m.OrganizationID, &m.Role, &m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
@@ -724,12 +822,17 @@ func (p *PsqlDB) UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UU
 	return m, nil
 }
 
-func (p *PsqlDB) RemoveOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) error {
+func (p *PsqlDB) RemoveOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) error {
 	const query = `
-		DELETE FROM organization_members
-		WHERE user_id = $1 AND organization_id = $2
+		DELETE FROM organization_members m
+		USING organization_members caller
+		JOIN users u ON u.id = caller.user_id AND u.is_active = true
+		WHERE m.user_id = $1
+			AND m.organization_id = $2
+			AND caller.organization_id = m.organization_id
+			AND caller.user_id = $3
 	`
-	tag, err := p.pool.Exec(ctx, query, userID, orgID)
+	tag, err := p.pool.Exec(ctx, query, userID, orgID, memberUserID)
 	if err != nil {
 		return err
 	}

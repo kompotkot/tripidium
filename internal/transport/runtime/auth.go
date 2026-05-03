@@ -70,11 +70,3 @@ func AuthSessionIDFromContext(ctx context.Context) (string, bool) {
 	}
 	return sessionID, true
 }
-
-func authJTIFromContext(ctx context.Context) (string, bool) {
-	jti, ok := ctx.Value(AuthJTIKey).(string)
-	if !ok || jti == "" {
-		return "", false
-	}
-	return jti, true
-}

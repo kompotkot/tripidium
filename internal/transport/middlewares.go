@@ -1,11 +1,14 @@
 package transport
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kompotkot/tripidium/internal/service"
 	"github.com/kompotkot/tripidium/internal/transport/runtime"
+	"github.com/kompotkot/tripidium/pkg/db"
 )
 
 type authContextKey string
@@ -59,7 +62,6 @@ func (s *Server) panicMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// CORS middleware
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var allowedOrigin string
@@ -92,7 +94,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// authMiddleware validates an access token and stores auth identity in request context
+// authMiddleware validates the access token JWT (stateless: signature, alg, typ, iss, aud, exp, claims)
+// and stores the extracted identity in the request context. No DB call is made here.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorization := r.Header.Get("Authorization")
@@ -105,5 +108,63 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		ctx := runtime.WithAuthIdentity(r.Context(), identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requireLiveSessionMiddleware is chained after authMiddleware on security-sensitive endpoints.
+// It verifies three things:
+//   - The session exists in the DB and is not revoked or expired.
+//   - The session's SubjectID matches the token's sub claim — guards against any
+//     inconsistency between JWT claims and session ownership.
+//   - (Implicit) authMiddleware has already run and populated identity in context.
+func (s *Server) requireLiveSessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sessionIDRaw, ok := runtime.AuthSessionIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		sessionID, err := uuid.Parse(sessionIDRaw)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		subjectIDRaw, ok := runtime.AuthSubjectIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		subjectID, err := uuid.Parse(subjectIDRaw)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		session, err := s.deps.DB.GetAuthSession(r.Context(), sessionID)
+		if err != nil {
+			if errors.Is(err, db.ErrTokenNotFound) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			s.deps.Log.Error("live_session_check_failed", "path", r.URL.Path, "session_id", sessionIDRaw, "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if session.RevokedAt != nil || !session.ExpiresAt.After(time.Now().UTC()) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if session.SubjectID != subjectID {
+			s.deps.Log.Error("live_session_subject_mismatch",
+				"path", r.URL.Path,
+				"token_subject", subjectIDRaw,
+				"session_subject", session.SubjectID.String(),
+			)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }

@@ -16,7 +16,7 @@ type UserUpdateRequest struct {
 	Phone    *string `json:"phone,omitempty"`
 }
 
-type UserPasswordPutRequest struct {
+type UserPasswordUpdateRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 }

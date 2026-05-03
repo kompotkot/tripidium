@@ -13,11 +13,12 @@ type OrganizationUpdateRequest struct {
 }
 
 type OrganizationResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string                       `json:"id"`
+	Name        string                       `json:"name"`
+	Description *string                      `json:"description,omitempty"`
+	CreatedAt   time.Time                    `json:"created_at"`
+	UpdatedAt   time.Time                    `json:"updated_at"`
+	Members     []OrganizationMemberResponse `json:"members,omitempty"`
 }
 
 type OrganizationListResponse struct {
@@ -34,13 +35,13 @@ type OrganizationMemberUpdateRequest struct {
 }
 
 type OrganizationMemberResponse struct {
-	UserID         string    `json:"user_id"`
-	OrganizationID string    `json:"organization_id"`
-	Role           string    `json:"role"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type OrganizationMemberListResponse struct {
+	ID      string                       `json:"id"`
 	Members []OrganizationMemberResponse `json:"members"`
 }

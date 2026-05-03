@@ -24,12 +24,10 @@ var validSyncModes = map[string]bool{
 	"EXTRA":  true,
 }
 
-// SqliteDB represents a SQLite database connection
 type SqliteDB struct {
 	db *sql.DB
 }
 
-// NewSqliteDB creates a new SQLite database connection with specified options
 func NewSqliteDB(uri string, enableWal bool, syncPragma string) (*SqliteDB, error) {
 	params := url.Values{}
 
@@ -75,7 +73,6 @@ func NewSqliteDB(uri string, enableWal bool, syncPragma string) (*SqliteDB, erro
 	return &SqliteDB{db: db}, nil
 }
 
-// TestConnection tests the database connection with a timeout
 func (s *SqliteDB) TestConnection(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -83,7 +80,6 @@ func (s *SqliteDB) TestConnection(ctx context.Context) error {
 	return s.db.PingContext(ctx)
 }
 
-// Close closes the database connection
 func (s *SqliteDB) Close() error {
 	if s.db != nil {
 		return s.db.Close()
@@ -108,6 +104,10 @@ func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, e
 }
 
 func (s *SqliteDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	return nil
+}
+
+func (s *SqliteDB) DeactivateUser(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
@@ -151,7 +151,11 @@ func (s *SqliteDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name
 	return model.Organization{}, nil
 }
 
-func (s *SqliteDB) GetOrganization(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
+func (s *SqliteDB) GetOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) GetOrganizationByID(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
 	return model.Organization{}, nil
 }
 
@@ -159,30 +163,30 @@ func (s *SqliteDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]m
 	return nil, nil
 }
 
-func (s *SqliteDB) UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *string, description *string) (model.Organization, error) {
+func (s *SqliteDB) UpdateOrganization(ctx context.Context, orgID, memberUserID uuid.UUID, name *string, description *string) (model.Organization, error) {
 	return model.Organization{}, nil
 }
 
-func (s *SqliteDB) DeleteOrganization(ctx context.Context, orgID uuid.UUID) error {
+func (s *SqliteDB) DeleteOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) error {
 	return nil
 }
 
-func (s *SqliteDB) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]model.OrganizationMember, error) {
+func (s *SqliteDB) ListOrganizationMembers(ctx context.Context, orgID, memberUserID uuid.UUID) ([]model.OrganizationMember, error) {
 	return nil, nil
 }
 
-func (s *SqliteDB) AddOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+func (s *SqliteDB) AddOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
 	return model.OrganizationMember{}, nil
 }
 
-func (s *SqliteDB) GetOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) (model.OrganizationMember, error) {
+func (s *SqliteDB) GetOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) (model.OrganizationMember, error) {
 	return model.OrganizationMember{}, nil
 }
 
-func (s *SqliteDB) UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error) {
+func (s *SqliteDB) UpdateOrganizationMemberRole(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
 	return model.OrganizationMember{}, nil
 }
 
-func (s *SqliteDB) RemoveOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) error {
+func (s *SqliteDB) RemoveOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) error {
 	return nil
 }

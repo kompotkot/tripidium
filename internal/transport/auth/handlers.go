@@ -26,15 +26,20 @@ func NewHandler(deps runtime.Dependencies) *Handler {
 }
 
 func (h *Handler) AuthLogin(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("login_parse_failed", "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadGateway)
+	var req dto.AuthLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	usernameRaw := r.FormValue("username")
-	emailRaw := r.FormValue("email")
-	passwordRaw := r.FormValue("password")
+	var usernameRaw, emailRaw string
+	if req.Username != nil {
+		usernameRaw = *req.Username
+	}
+	if req.Email != nil {
+		emailRaw = *req.Email
+	}
+	passwordRaw := req.Password
 
 	if usernameRaw == "" && emailRaw == "" {
 		http.Error(w, "Username or email is required", http.StatusBadRequest)
@@ -424,7 +429,7 @@ func (h *Handler) AuthGetSubject(w http.ResponseWriter, r *http.Request) {
 		resp.User = profile
 
 	case model.SubjectKindOrganization:
-		org, err := h.deps.DB.GetOrganization(r.Context(), subjectID)
+		org, err := h.deps.DB.GetOrganizationByID(r.Context(), subjectID)
 		if err != nil {
 			if errors.Is(err, db.ErrOrganizationNotFound) {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)

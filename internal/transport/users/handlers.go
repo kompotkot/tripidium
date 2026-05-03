@@ -53,11 +53,11 @@ func (h *Handler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	phoneRaw := ""
+	phoneStr := ""
 	if req.Phone != nil {
-		phoneRaw = *req.Phone
+		phoneStr = *req.Phone
 	}
-	phone, err := service.ValidatePhone(phoneRaw, h.deps.Cfg.IsPhoneRequired)
+	phone, err := service.ValidatePhone(phoneStr, h.deps.Cfg.IsPhoneRequired)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -105,7 +105,6 @@ func (h *Handler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	if h.deps.Cfg.IsInviteRequired {
 		if err := h.deps.DB.ClaimUserInvite(r.Context(), inviteCode, userID); err != nil {
 			h.deps.Log.Error("register_claim_invite_failed", "error", err)
-			// User was created; best-effort log, do not fail the response
 		}
 	}
 
@@ -148,9 +147,13 @@ func (h *Handler) UserPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_patch_parse_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
+	var req dto.UserUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Username == nil && req.Email == nil && req.Phone == nil {
+		http.Error(w, "At least one field must be provided", http.StatusBadRequest)
 		return
 	}
 
@@ -176,34 +179,25 @@ func (h *Handler) UserPatch(w http.ResponseWriter, r *http.Request) {
 		phone = int(*currentUser.Phone)
 	}
 
-	if _, provided := r.Form["username"]; provided {
-		username, err = service.ValidateUsername(r.FormValue("username"))
+	if req.Username != nil {
+		username, err = service.ValidateUsername(*req.Username)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
-	if _, provided := r.Form["email"]; provided {
-		email, err = service.ValidateEmail(r.FormValue("email"))
+	if req.Email != nil {
+		email, err = service.ValidateEmail(*req.Email)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
-	if _, provided := r.Form["phone"]; provided {
-		phone, err = service.ValidatePhone(r.FormValue("phone"), h.deps.Cfg.IsPhoneRequired)
+	if req.Phone != nil {
+		phone, err = service.ValidatePhone(*req.Phone, h.deps.Cfg.IsPhoneRequired)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
-		}
-	}
-
-	if _, hasUsername := r.Form["username"]; !hasUsername {
-		if _, hasEmail := r.Form["email"]; !hasEmail {
-			if _, hasPhone := r.Form["phone"]; !hasPhone {
-				http.Error(w, "At least one field must be provided", http.StatusBadRequest)
-				return
-			}
 		}
 	}
 
@@ -231,32 +225,29 @@ func (h *Handler) UserPatch(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ToUserResponse(updatedUser))
 }
 
-func (h *Handler) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UserPasswordUpdate(w http.ResponseWriter, r *http.Request) {
 	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		h.deps.Log.Error("user_password_parse_failed", "subject_id", subjectIDRaw, "error", err)
-		http.Error(w, "Failed to parse the form", http.StatusBadRequest)
+	var req dto.UserPasswordUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	currentPasswordRaw := r.FormValue("current_password")
-	newPasswordRaw := r.FormValue("new_password")
-	if currentPasswordRaw == "" || newPasswordRaw == "" {
+	if req.CurrentPassword == "" || req.NewPassword == "" {
 		http.Error(w, "Current password and new password are required", http.StatusBadRequest)
 		return
 	}
 
-	currentPassword, err := service.ValidatePassword(currentPasswordRaw)
+	currentPassword, err := service.ValidatePassword(req.CurrentPassword)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	newPassword, err := service.ValidatePassword(newPasswordRaw)
+	newPassword, err := service.ValidatePassword(req.NewPassword)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -309,6 +300,34 @@ func (h *Handler) UserPasswordPut(w http.ResponseWriter, r *http.Request) {
 		}
 		h.deps.Log.Error("user_password_update_failed", "user_id", userID.String(), "subject_id", subjectIDRaw, "error", err)
 		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UserDelete handles DELETE /identity/users/current — marks the user as inactive.
+func (h *Handler) UserDelete(w http.ResponseWriter, r *http.Request) {
+	subjectIDRaw, ok := runtime.AuthUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := uuid.Parse(subjectIDRaw)
+	if err != nil {
+		h.deps.Log.Error("user_delete_invalid_id", "subject_id", subjectIDRaw, "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.deps.DB.DeactivateUser(r.Context(), userID); err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.deps.Log.Error("user_delete_failed", "user_id", userID.String(), "error", err)
+		http.Error(w, "Failed to deactivate user", http.StatusInternalServerError)
 		return
 	}
 

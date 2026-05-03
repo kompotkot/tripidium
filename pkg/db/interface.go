@@ -33,6 +33,8 @@ type Database interface {
 	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error)
 	// UpdateUserPassword sets a new password hash (PUT /identity/users/current/password)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error
+	// DeactivateUser marks the user as inactive (DELETE /identity/users/current)
+	DeactivateUser(ctx context.Context, userID uuid.UUID) error
 
 	// CheckUserInvite verifies invite code is valid and unclaimed
 	CheckUserInvite(ctx context.Context, inviteCode string) (bool, error)
@@ -60,25 +62,27 @@ type Database interface {
 
 	// CreateOrganization creates an organization subject, its profile, and assigns ownerUserID as owner
 	CreateOrganization(ctx context.Context, orgID uuid.UUID, name string, description *string, ownerUserID uuid.UUID) (model.Organization, error)
-	// GetOrganization returns an organization by ID
-	GetOrganization(ctx context.Context, orgID uuid.UUID) (model.Organization, error)
+	// GetOrganization returns an organization only when memberUserID belongs to it
+	GetOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) (model.Organization, error)
+	// GetOrganizationByID returns an organization profile without membership scoping
+	GetOrganizationByID(ctx context.Context, orgID uuid.UUID) (model.Organization, error)
 	// ListOrganizations returns organizations where the given user is a member
 	ListOrganizations(ctx context.Context, userID uuid.UUID) ([]model.Organization, error)
 	// UpdateOrganization updates editable organization fields; nil pointer means keep current value
-	UpdateOrganization(ctx context.Context, orgID uuid.UUID, name *string, description *string) (model.Organization, error)
+	UpdateOrganization(ctx context.Context, orgID, memberUserID uuid.UUID, name *string, description *string) (model.Organization, error)
 	// DeleteOrganization deletes an organization subject and cascades to its profile and members
-	DeleteOrganization(ctx context.Context, orgID uuid.UUID) error
+	DeleteOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) error
 
 	// --- Organization members ---
 
-	// ListOrganizationMembers returns all membership records for an organization
-	ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]model.OrganizationMember, error)
+	// ListOrganizationMembers returns all membership records only when memberUserID belongs to the organization
+	ListOrganizationMembers(ctx context.Context, orgID, memberUserID uuid.UUID) ([]model.OrganizationMember, error)
 	// AddOrganizationMember adds a user to an organization with the given role
-	AddOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error)
-	// GetOrganizationMember returns membership details for a specific user in an organization
-	GetOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) (model.OrganizationMember, error)
+	AddOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error)
+	// GetOrganizationMember returns membership details only when memberUserID belongs to the organization
+	GetOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) (model.OrganizationMember, error)
 	// UpdateOrganizationMemberRole updates the role for a specific user in an organization
-	UpdateOrganizationMemberRole(ctx context.Context, orgID uuid.UUID, userID uuid.UUID, role string) (model.OrganizationMember, error)
+	UpdateOrganizationMemberRole(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error)
 	// RemoveOrganizationMember removes a user from an organization
-	RemoveOrganizationMember(ctx context.Context, orgID uuid.UUID, userID uuid.UUID) error
+	RemoveOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) error
 }

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kompotkot/tripidium/internal/authz"
 	"github.com/kompotkot/tripidium/internal/config"
 	"github.com/kompotkot/tripidium/internal/logger"
 	"github.com/kompotkot/tripidium/internal/transport"
@@ -29,8 +30,17 @@ var versionFile string
 
 var TripidiumVersion = strings.TrimSpace(versionFile)
 
-// runServer initializes dependencies, starts the HTTP server, and handles graceful shutdown
-func runServer() error {
+func serverCMD(args []string) error {
+	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("server cmd got unexpected arguments: %v", fs.Args())
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -57,21 +67,23 @@ func runServer() error {
 		return fmt.Errorf("failed to initialize database connection: %v", err)
 	}
 
-	// Test database connection
 	if err := database.TestConnection(context.Background()); err != nil {
 		return fmt.Errorf("failed to test database connection: %v", err)
 	}
 	log.Info("database connection established successfully")
 
-	// Create context for graceful shutdown
+	// Initialize RBAC authorizer
+	authorizer := authz.NewRBACAuthorizer(database)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Create HTTP server
 	newSrv := transport.NewServer(transport.Dependencies{
-		DB:  database,
-		Cfg: cfg.Server,
-		Log: log,
+		DB:         database,
+		Cfg:        cfg.Server,
+		Log:        log,
+		Authorizer: authorizer,
 	})
 	commonHandler := newSrv.BuildCommonHandler()
 	srv := &http.Server{
@@ -79,7 +91,7 @@ func runServer() error {
 		Handler: *commonHandler,
 	}
 
-	// Start server in a goroutine
+	// Start server
 	go func() {
 		log.Info("starting HTTP server", "addr", cfg.Server.Addr, "port", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -91,11 +103,9 @@ func runServer() error {
 	<-ctx.Done()
 	log.Info("received shutdown signal, starting graceful shutdown")
 
-	// Create shutdown context with timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Gracefully close database connection
 	log.Info("closing database connection")
 	database.Close()
 
@@ -109,23 +119,20 @@ func runServer() error {
 	return nil
 }
 
-// serverCMD parses server command arguments and runs the server command
-func serverCMD(args []string) error {
-	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+func tokenCMD(args []string) error {
+	fs := flag.NewFlagSet("token", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+
+	var fileName string
+	fs.StringVar(&fileName, "file-name", "", "file name without extension to save key pair")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("server cmd got unexpected arguments: %v", fs.Args())
+		return fmt.Errorf("token cmd got unexpected arguments: %v", fs.Args())
 	}
 
-	return runServer()
-}
-
-// runToken generates an Ed25519 key pair and prints or writes it in PEM form
-func runToken(fileName string) error {
 	// Generate new ed25519 key pair and return in PKCS#8 format
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -178,24 +185,6 @@ func runToken(fileName string) error {
 	return nil
 }
 
-// tokenCMD parses token command flags and executes token generation
-func tokenCMD(args []string) error {
-	fs := flag.NewFlagSet("token", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	var fileName string
-	fs.StringVar(&fileName, "file-name", "", "file name without extension to save key pair")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("token cmd got unexpected arguments: %v", fs.Args())
-	}
-
-	return runToken(fileName)
-}
-
 func versionCMD(args []string) error {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -217,7 +206,6 @@ func usageCMD(w *os.File) {
 	fmt.Fprintln(w, "  version   Print drones version")
 }
 
-// run routes top-level CLI arguments to the appropriate subcommand handler
 func run(args []string) error {
 	if len(args) == 0 {
 		usageCMD(os.Stderr)
