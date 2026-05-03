@@ -31,7 +31,6 @@ Endpoints for user authentication, token rotation, logout, and session managemen
 - `DELETE /auth/sessions` - **Revoke all sessions**. Revokes all sessions for the current authenticated subject, including the current session, and clears the refresh cookie.
 - `DELETE /auth/sessions/{session_id}` - **Revoke one session**. Revokes one session for the current authenticated subject.
 - `GET /auth/subject` - **Get current subject**. Returns the current authenticated subject identity and typed profile.
-- `POST /auth/token` - **Issue token**. Issues a token using a supported grant type. Args: `grant_type`, client credentials depending on grant type. _Not implemented until service account credentials are introduced._
 
 ## Identity / Users
 
@@ -41,6 +40,7 @@ Endpoints for managing user accounts and the current user's profile and credenti
 - `GET /identity/users/current` - **Get current user profile**. Returns the user profile for the current user-backed subject.
 - `PATCH /identity/users/current` - **Update current user profile**. Updates editable user profile fields. Args: `username` optional, `email` optional, `phone` optional.
 - `PUT /identity/users/current/password` - **Change current user password**. Changes password for the current user-backed subject.
+- `DELETE /identity/users/current` - **Delete current user**. Marks user as inactive.
 
 ## Identity / Organizations
 
