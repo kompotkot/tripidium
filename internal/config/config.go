@@ -12,11 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/kompotkot/tripidium/internal/types"
 )
 
-// Default configuration values
 const (
 	DefaultLoggerLevel  = "info"
 	DefaultLoggerFormat = "text"
@@ -110,10 +107,8 @@ func getBoolEnv(key string, fallback bool) bool {
 	}
 }
 
-// Load and parse configuration
-// TODO(kompotkot): Re-write based on https://github.com/kelseyhightower/envconfig
-func Load() (*types.Config, error) {
-	var cfg types.Config
+func Load() (*Config, error) {
+	var cfg Config
 
 	logLevelEnv := getStringEnv("LOG_LEVEL", DefaultLoggerLevel)
 	logFormatEnv := getStringEnv("LOG_FORMAT", DefaultLoggerFormat)
@@ -210,18 +205,18 @@ func Load() (*types.Config, error) {
 	refreshTokenCookieHttpOnly := getBoolEnv("REFRESH_TOKEN_COOKIE_HTTP_ONLY", DefaultRefreshTokenCookieHttpOnly)
 	refreshTokenCookieSameSite := getIntEnv("REFRESH_TOKEN_COOKIE_SAMESITE", DefaultRefreshTokenCookieSameSite)
 
-	cfg = types.Config{
-		Logger: types.LoggerConfig{
+	cfg = Config{
+		Logger: LoggerConfig{
 			Level:  logLevelEnv,
 			Format: logFormatEnv,
 		},
-		Database: types.DatabaseConfig{
+		Database: DatabaseConfig{
 			Type:            databaseTypeEnv,
 			URI:             databaseURIEnv,
 			MaxConns:        databaseMaxConns,
 			ConnMaxLifetime: databaseConnMaxLifetime,
 		},
-		Server: types.ServerConfig{
+		Server: ServerConfig{
 			Addr: serverAddr,
 			Port: fmt.Sprintf("%d", serverPort),
 
@@ -231,7 +226,7 @@ func Load() (*types.Config, error) {
 			CORSWhitelist:             corsWhitelist,
 			CORSAllowedDefaultMethods: serverCORSAllowedDefaultMethodsEnv,
 
-			AuthConfig: types.AuthConfig{
+			AuthConfig: AuthConfig{
 				ArgonTime:    DefaultArgonTime,
 				ArgonMemory:  DefaultArgonMemory,
 				ArgonThreads: DefaultArgonThreads,

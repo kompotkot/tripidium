@@ -1,0 +1,83 @@
+@schema = http
+@hostname = localhost
+@port = 8020
+@host = {{schema}}://{{hostname}}:{{port}}
+# Set @accessToken after running POST /auth/login in auth.http
+@accessToken = <access-token>
+
+# ---------------------------------------------------------------------------
+# IDENTITY — Users
+# ---------------------------------------------------------------------------
+
+### Register user — POST /identity/users
+# Creates a new user-backed subject. No authentication required.
+
+# @name registerUser
+POST {{host}}/identity/users HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "sergei",
+  "email": "sergei@example.com",
+  "password": "secret123!"
+}
+
+### Register user (with invite) — POST /identity/users
+# Use this variant when IsInviteRequired is enabled on the server.
+
+# @name registerUserWithInvite
+POST {{host}}/identity/users HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "ksenia",
+  "email": "ksenia@example.com",
+  "password": "secret123!",
+  "invite_code": "test-invite"
+}
+
+### Get current user — GET /identity/users/current
+# Returns the user profile for the current user-backed subject.
+
+# @name getCurrentUser
+GET {{host}}/identity/users/current HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Update current user — PATCH /identity/users/current
+# Updates editable user profile fields. All fields are optional.
+
+# @name patchCurrentUser
+PATCH {{host}}/identity/users/current HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "username": "ksenia2",
+  "email": "ksenia2@example.com"
+}
+
+###
+
+### Change password — PUT /identity/users/current/password
+# Changes the password for the current user-backed subject.
+
+# @name changePassword
+PUT {{host}}/identity/users/current/password HTTP/1.1
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "current_password": "secret123!",
+  "new_password": "newSecret456!"
+}
+
+###
+
+### Delete current user — DELETE /identity/users/current
+# Marks the current user inactive and revokes active sessions.
+
+# @name deleteCurrentUser
+DELETE {{host}}/identity/users/current HTTP/1.1
+Authorization: Bearer {{accessToken}}

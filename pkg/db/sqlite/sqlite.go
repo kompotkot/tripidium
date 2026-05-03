@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kompotkot/tripidium/pkg/iam"
+	"github.com/kompotkot/tripidium/pkg/model"
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
@@ -24,12 +24,10 @@ var validSyncModes = map[string]bool{
 	"EXTRA":  true,
 }
 
-// SqliteDB represents a SQLite database connection
 type SqliteDB struct {
 	db *sql.DB
 }
 
-// NewSqliteDB creates a new SQLite database connection with specified options
 func NewSqliteDB(uri string, enableWal bool, syncPragma string) (*SqliteDB, error) {
 	params := url.Values{}
 
@@ -75,7 +73,6 @@ func NewSqliteDB(uri string, enableWal bool, syncPragma string) (*SqliteDB, erro
 	return &SqliteDB{db: db}, nil
 }
 
-// TestConnection tests the database connection with a timeout
 func (s *SqliteDB) TestConnection(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -83,7 +80,6 @@ func (s *SqliteDB) TestConnection(ctx context.Context) error {
 	return s.db.PingContext(ctx)
 }
 
-// Close closes the database connection
 func (s *SqliteDB) Close() error {
 	if s.db != nil {
 		return s.db.Close()
@@ -91,46 +87,106 @@ func (s *SqliteDB) Close() error {
 	return nil
 }
 
-func (s *SqliteDB) CreateUser(ctx context.Context, username, passwordHash string) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (model.User, error) {
+	return model.User{}, nil
 }
 
-func (s *SqliteDB) GetUser(ctx context.Context, userId, username string) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) GetUser(ctx context.Context, userID, username, email string) (model.User, error) {
+	return model.User{}, nil
 }
 
-func (s *SqliteDB) CreateAuthSession(ctx context.Context, userID uuid.UUID, refreshTokenHash, clientIP, userAgent string) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
+func (s *SqliteDB) CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
 }
 
-func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error) {
-	return iam.User{}, nil
+func (s *SqliteDB) UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error) {
+	return model.User{}, nil
 }
 
 func (s *SqliteDB) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
 	return nil
 }
 
-func (s *SqliteDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
-}
-
-func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
-}
-
-func (s *SqliteDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error) {
-	return iam.AuthSession{}, nil
-}
-
-func (s *SqliteDB) ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error) {
-	return nil, nil
-}
-
-func (s *SqliteDB) RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error {
+func (s *SqliteDB) DeactivateUser(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
-func (s *SqliteDB) RevokeAllAuthSessions(ctx context.Context, userID uuid.UUID) error {
+func (s *SqliteDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
+	return false, nil
+}
+
+func (s *SqliteDB) ClaimUserInvite(ctx context.Context, inviteCode string, userID uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) GetAuthSession(ctx context.Context, sessionID uuid.UUID) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
+}
+
+func (s *SqliteDB) GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
+}
+
+func (s *SqliteDB) RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error) {
+	return model.AuthSession{}, nil
+}
+
+func (s *SqliteDB) ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]model.AuthSession, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) RevokeAuthSession(ctx context.Context, sessionID, subjectID uuid.UUID, reason string, replacedBy *uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) RevokeAllAuthSessions(ctx context.Context, subjectID uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) GetSubject(ctx context.Context, subjectID uuid.UUID) (model.Subject, error) {
+	return model.Subject{}, nil
+}
+
+func (s *SqliteDB) CreateOrganization(ctx context.Context, orgID uuid.UUID, name string, description *string, ownerUserID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) GetOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) GetOrganizationByID(ctx context.Context, orgID uuid.UUID) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) ListOrganizations(ctx context.Context, userID uuid.UUID) ([]model.Organization, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) UpdateOrganization(ctx context.Context, orgID, memberUserID uuid.UUID, name *string, description *string) (model.Organization, error) {
+	return model.Organization{}, nil
+}
+
+func (s *SqliteDB) DeleteOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) error {
+	return nil
+}
+
+func (s *SqliteDB) ListOrganizationMembers(ctx context.Context, orgID, memberUserID uuid.UUID) ([]model.OrganizationMember, error) {
+	return nil, nil
+}
+
+func (s *SqliteDB) AddOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) GetOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) UpdateOrganizationMemberRole(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error) {
+	return model.OrganizationMember{}, nil
+}
+
+func (s *SqliteDB) RemoveOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) error {
 	return nil
 }

@@ -6,11 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kompotkot/tripidium/internal/types"
+	"github.com/kompotkot/tripidium/internal/config"
 )
 
-// Initialize main logger
-func New(lc types.LoggerConfig) (*slog.Logger, error) {
+func New(lc config.LoggerConfig) (*slog.Logger, error) {
 	var logHandler slog.Handler
 
 	level := strings.ToLower(strings.TrimSpace(lc.Level))

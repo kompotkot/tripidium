@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kompotkot/tripidium/pkg/iam"
+	"github.com/kompotkot/tripidium/pkg/model"
 
 	"github.com/google/uuid"
 )
@@ -18,16 +18,23 @@ type Database interface {
 	// Close closes the database connection
 	Close() error
 
+	// --- Subjects ---
+
+	// GetSubject returns a subject by ID
+	GetSubject(ctx context.Context, subjectID uuid.UUID) (model.Subject, error)
+
 	// --- Users ---
 
 	// CreateUser creates a new user
-	CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (iam.User, error)
-	// GetUser returns the user by ID or Username
-	GetUser(ctx context.Context, userID, username, email string) (iam.User, error)
+	CreateUser(ctx context.Context, userID uuid.UUID, isActive bool, username, email, passwordHash string, phone int) (model.User, error)
+	// GetUser returns the user by ID, username, or email.
+	GetUser(ctx context.Context, userID, username, email string) (model.User, error)
 	// UpdateUser updates profile fields
-	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (iam.User, error)
-	// UpdateUserPassword sets a new password hash (PUT /user/password)
+	UpdateUser(ctx context.Context, userID uuid.UUID, username, email, phone string) (model.User, error)
+	// UpdateUserPassword sets a new password hash (PUT /identity/users/current/password)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error
+	// DeactivateUser marks the user as inactive (DELETE /identity/users/current)
+	DeactivateUser(ctx context.Context, userID uuid.UUID) error
 
 	// CheckUserInvite verifies invite code is valid and unclaimed
 	CheckUserInvite(ctx context.Context, inviteCode string) (bool, error)
@@ -37,17 +44,45 @@ type Database interface {
 	// --- Auth sessions ---
 
 	// CreateAuthSession creates a session after login
-	CreateAuthSession(ctx context.Context, sessionID uuid.UUID, userID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
+	CreateAuthSession(ctx context.Context, sessionID uuid.UUID, subjectID, familyID uuid.UUID, refreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error)
 	// GetAuthSession returns a session by ID
-	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (iam.AuthSession, error)
+	GetAuthSession(ctx context.Context, sessionID uuid.UUID) (model.AuthSession, error)
 	// GetAuthSessionByRefreshToken returns a session by refresh token hash
-	GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (iam.AuthSession, error)
+	GetAuthSessionByRefreshToken(ctx context.Context, refreshTokenHash string) (model.AuthSession, error)
 	// RefreshAuthSession atomically rotates a refresh-token session and returns new session
-	RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (iam.AuthSession, error)
-	// ListAuthSessions returns all sessions for a user
-	ListAuthSessions(ctx context.Context, userID uuid.UUID) ([]iam.AuthSession, error)
+	RefreshAuthSession(ctx context.Context, oldRefreshTokenHash string, newSessionID uuid.UUID, newRefreshTokenHash, createdIP string, createdUserAgent *string, expiresAt time.Time) (model.AuthSession, error)
+	// ListAuthSessions returns all active sessions for a subject
+	ListAuthSessions(ctx context.Context, subjectID uuid.UUID) ([]model.AuthSession, error)
 	// RevokeAuthSession revokes one session, optionally marking it replaced by another
-	RevokeAuthSession(ctx context.Context, sessionID uuid.UUID, reason string, replacedBy *uuid.UUID) error
-	// RevokeAllAuthSessions revokes every session for a user
-	RevokeAllAuthSessions(ctx context.Context, userID uuid.UUID) error
+	RevokeAuthSession(ctx context.Context, sessionID, subjectID uuid.UUID, reason string, replacedBy *uuid.UUID) error
+	// RevokeAllAuthSessions revokes every active session for a subject
+	RevokeAllAuthSessions(ctx context.Context, subjectID uuid.UUID) error
+
+	// --- Organizations ---
+
+	// CreateOrganization creates an organization subject, its profile, and assigns ownerUserID as owner
+	CreateOrganization(ctx context.Context, orgID uuid.UUID, name string, description *string, ownerUserID uuid.UUID) (model.Organization, error)
+	// GetOrganization returns an organization only when memberUserID belongs to it
+	GetOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) (model.Organization, error)
+	// GetOrganizationByID returns an organization profile without membership scoping
+	GetOrganizationByID(ctx context.Context, orgID uuid.UUID) (model.Organization, error)
+	// ListOrganizations returns organizations where the given user is a member
+	ListOrganizations(ctx context.Context, userID uuid.UUID) ([]model.Organization, error)
+	// UpdateOrganization updates editable organization fields; nil pointer means keep current value
+	UpdateOrganization(ctx context.Context, orgID, memberUserID uuid.UUID, name *string, description *string) (model.Organization, error)
+	// DeleteOrganization deletes an organization subject and cascades to its profile and members
+	DeleteOrganization(ctx context.Context, orgID, memberUserID uuid.UUID) error
+
+	// --- Organization members ---
+
+	// ListOrganizationMembers returns all membership records only when memberUserID belongs to the organization
+	ListOrganizationMembers(ctx context.Context, orgID, memberUserID uuid.UUID) ([]model.OrganizationMember, error)
+	// AddOrganizationMember adds a user to an organization with the given role
+	AddOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error)
+	// GetOrganizationMember returns membership details only when memberUserID belongs to the organization
+	GetOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) (model.OrganizationMember, error)
+	// UpdateOrganizationMemberRole updates the role for a specific user in an organization
+	UpdateOrganizationMemberRole(ctx context.Context, orgID, userID, memberUserID uuid.UUID, role string) (model.OrganizationMember, error)
+	// RemoveOrganizationMember removes a user from an organization
+	RemoveOrganizationMember(ctx context.Context, orgID, userID, memberUserID uuid.UUID) error
 }

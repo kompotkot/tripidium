@@ -1,4 +1,4 @@
-package types
+package config
 
 import (
 	"crypto/ed25519"
@@ -6,13 +6,11 @@ import (
 	"time"
 )
 
-// Logger configuration
 type LoggerConfig struct {
 	Level  string
 	Format string
 }
 
-// Database configuration
 type DatabaseConfig struct {
 	Type            string
 	URI             string
@@ -47,7 +45,6 @@ type AuthConfig struct {
 	RefreshTokenCookieSameSite http.SameSite
 }
 
-// Server configuration
 type ServerConfig struct {
 	Addr string
 	Port string
@@ -61,7 +58,6 @@ type ServerConfig struct {
 	AuthConfig AuthConfig
 }
 
-// Main configuration
 type Config struct {
 	Logger   LoggerConfig
 	Database DatabaseConfig

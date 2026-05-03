@@ -1,0 +1,78 @@
+@schema = http
+@hostname = localhost
+@port = 8020
+@host = {{schema}}://{{hostname}}:{{port}}
+
+### Login — POST /auth/login
+# Authenticates a user and creates an auth session.
+# Sets the refresh_token cookie and returns an access token.
+# Use username OR email (at least one is required).
+
+# @name login
+POST {{host}}/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+	"username": "ksenia",
+	"email": "ksenia@example.com",
+	"password": "secret123!"
+}
+
+###
+
+@accessToken = {{login.response.body.$.access_token}}
+
+### Refresh — POST /auth/refresh
+# Validates the refresh token cookie and issues a new access+refresh token pair.
+# The refresh_token cookie is set automatically when running login above.
+
+# @name refresh
+POST {{host}}/auth/refresh HTTP/1.1
+
+###
+
+### Get current subject — GET /auth/subject
+# Returns the current authenticated subject identity and typed profile.
+
+# @name getSubject
+GET {{host}}/auth/subject HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### List sessions — GET /auth/sessions
+# Returns active sessions for the current authenticated subject.
+
+# @name listSessions
+GET {{host}}/auth/sessions HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Revoke one session — DELETE /auth/sessions/{session_id}
+# Revokes the specified session.
+# Set @sessionId to a value from GET /auth/sessions above.
+
+@sessionId = 00000000-0000-0000-0000-000000000000
+
+# @name revokeSession
+DELETE {{host}}/auth/sessions/{{sessionId}} HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Revoke all sessions — DELETE /auth/sessions
+# Revokes all sessions for the current subject and clears the refresh cookie.
+
+# @name revokeAllSessions
+DELETE {{host}}/auth/sessions HTTP/1.1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Logout — POST /auth/logout
+# Revokes only the current session and clears the refresh cookie.
+
+# @name logout
+POST {{host}}/auth/logout HTTP/1.1
+Authorization: Bearer {{accessToken}}
