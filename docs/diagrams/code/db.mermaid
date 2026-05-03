@@ -1,0 +1,72 @@
+---
+config:
+  theme: dark
+  layout: elk
+---
+erDiagram
+	direction TB
+
+	subjects {
+		uuid id PK
+		varchar kind
+		timestamptz created_at
+		timestamptz updated_at
+	}
+
+	users {
+		uuid id PK
+		bool is_active
+		varchar username
+		varchar email
+		int phone
+		varchar password_hash
+		timestamptz created_at
+		timestamptz updated_at
+	}
+
+	auth_sessions {
+		uuid id PK
+		uuid subject_id FK
+		uuid family_id
+		varchar refresh_token_hash
+		inet created_ip
+		varchar created_user_agent
+		timestamptz created_at
+		timestamptz updated_at
+		timestamptz expires_at
+		timestamptz revoked_at
+		varchar revoke_reason
+		uuid replaced_by FK
+	}
+
+	user_invites {
+		varchar id PK
+		uuid user_id FK
+		varchar description
+		timestamptz created_at
+		timestamptz updated_at
+	}
+
+	organizations {
+		uuid id PK
+		varchar name
+		varchar description
+		timestamptz created_at
+		timestamptz updated_at
+	}
+
+	organization_members {
+		uuid user_id PK,FK
+		uuid organization_id PK,FK
+		varchar role
+		timestamptz created_at
+		timestamptz updated_at
+	}
+
+	subjects||--||users:"is"
+	subjects||--o{auth_sessions:"has"
+	subjects||--||organizations:"is"
+	users||--o{user_invites:"has"
+	users||--o{organization_members:"member_of"
+	organizations||--o{organization_members:"has"
+	auth_sessions||--o|auth_sessions:"replaced"
