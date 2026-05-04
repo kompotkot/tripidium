@@ -2,6 +2,8 @@
 
 BEGIN;
 
+SET LOCAL search_path = :"DB_AUTH_SCHEMA_NAME", pg_temp;
+
 ALTER TABLE subjects
     DROP CONSTRAINT IF EXISTS subjects_kind_check;
 
@@ -50,6 +52,6 @@ EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS ix_org_members_org_id ON organization_members (organization_id);
 
-UPDATE version_auth SET version_num = 'b8227e6e851a' RETURNING version_auth.version_num;
+UPDATE version_auth SET version_num = 'b8227e6e851a' RETURNING version_num;
 
 COMMIT;

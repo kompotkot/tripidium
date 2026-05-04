@@ -2,6 +2,8 @@
 
 BEGIN;
 
+SET LOCAL search_path = :"DB_AUTH_SCHEMA_NAME", pg_temp;
+
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -101,11 +103,11 @@ CREATE INDEX IF NOT EXISTS ix_auth_sess_active_expires_at ON auth_sessions (expi
 WITH updated AS (
     UPDATE version_auth
     SET version_num = 'd2170a231906'
-    RETURNING version_auth.version_num
+    RETURNING version_num
 )
 INSERT INTO version_auth (version_num)
 SELECT 'd2170a231906'
 WHERE NOT EXISTS (SELECT 1 FROM updated)
-RETURNING version_auth.version_num;
+RETURNING version_num;
 
 COMMIT;

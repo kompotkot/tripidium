@@ -2,6 +2,8 @@
 
 BEGIN;
 
+SET LOCAL search_path = :"DB_AUTH_SCHEMA_NAME", pg_temp;
+
 CREATE TABLE IF NOT EXISTS user_invites (
     id VARCHAR(64) NOT NULL, 
     user_id UUID, 
@@ -23,6 +25,6 @@ BEFORE UPDATE ON user_invites
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
-UPDATE version_auth SET version_num = 'fd168c58bc02' RETURNING version_auth.version_num;
+UPDATE version_auth SET version_num = 'fd168c58bc02' RETURNING version_num;
 
 COMMIT;
