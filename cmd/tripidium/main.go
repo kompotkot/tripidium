@@ -198,12 +198,12 @@ func versionCMD(args []string) error {
 }
 
 func usageCMD(w *os.File) {
-	fmt.Fprintln(w, "Usage: drones <command> [flags]")
+	fmt.Fprintln(w, "Usage: tripidium <command> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  server    Run API server")
 	fmt.Fprintln(w, "  token     Generate token private key")
-	fmt.Fprintln(w, "  version   Print drones version")
+	fmt.Fprintln(w, "  version   Print tripidium version")
 }
 
 func run(args []string) error {
