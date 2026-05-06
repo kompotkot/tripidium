@@ -100,6 +100,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_sess_rf_tok_hsh ON auth_sessions (refr
 
 CREATE INDEX IF NOT EXISTS ix_auth_sess_active_expires_at ON auth_sessions (expires_at) WHERE revoked_at IS NULL;
 
+CREATE OR REPLACE FUNCTION is_live_session(p_sid uuid, p_sub uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = :"DB_AUTH_SCHEMA_NAME", pg_temp
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1
+        FROM auth_sessions s
+        WHERE s.id = p_sid
+          AND s.subject_id = p_sub
+          AND s.revoked_at IS NULL
+          AND s.expires_at > NOW()
+    );
+END;
+$$;
+
 WITH updated AS (
     UPDATE version_auth
     SET version_num = 'd2170a231906'
