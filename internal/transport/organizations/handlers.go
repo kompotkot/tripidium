@@ -89,6 +89,16 @@ func isValidRole(role string) bool {
 	return false
 }
 
+// isAssignableRole reports whether role may be assigned via membership APIs.
+// Owner is reserved for system-controlled flows (e.g. org creation / transfers).
+func isAssignableRole(role string) bool {
+	switch role {
+	case model.OrgMemberRoleAdmin, model.OrgMemberRoleEditor, model.OrgMemberRoleViewer:
+		return true
+	}
+	return false
+}
+
 func roleRank(role string) (int, bool) {
 	switch role {
 	case model.OrgMemberRoleOwner:
@@ -334,6 +344,10 @@ func (h *Handler) AddMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid role", http.StatusBadRequest)
 		return
 	}
+	if !isAssignableRole(req.Role) {
+		http.Error(w, "Role cannot be assigned", http.StatusBadRequest)
+		return
+	}
 	targetUserID, err := uuid.Parse(req.UserID)
 	if err != nil {
 		http.Error(w, "Invalid user_id", http.StatusBadRequest)
@@ -430,6 +444,10 @@ func (h *Handler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isValidRole(req.Role) {
 		http.Error(w, "Invalid role", http.StatusBadRequest)
+		return
+	}
+	if req.Role == model.OrgMemberRoleOwner {
+		http.Error(w, "Role cannot be assigned", http.StatusBadRequest)
 		return
 	}
 
