@@ -275,6 +275,15 @@ func (p *PsqlDB) DeactivateUser(ctx context.Context, userID uuid.UUID) error {
 	return tx.Commit(ctx)
 }
 
+func (p *PsqlDB) CreateUserRegistrationInvite(ctx context.Context, id string, description *string) error {
+	const query = `
+		INSERT INTO user_invites (id, description)
+		VALUES ($1, $2)
+	`
+	_, err := p.pool.Exec(ctx, query, id, description)
+	return err
+}
+
 func (p *PsqlDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
 	const query = `
 		SELECT EXISTS (SELECT 1 FROM user_invites WHERE id = $1 AND user_id IS NULL)

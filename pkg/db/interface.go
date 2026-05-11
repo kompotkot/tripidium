@@ -36,6 +36,9 @@ type Database interface {
 	// DeactivateUser marks the user as inactive (DELETE /identity/users/current)
 	DeactivateUser(ctx context.Context, userID uuid.UUID) error
 
+	// CreateUserRegistrationInvite inserts an unclaimed invite for user registration
+	CreateUserRegistrationInvite(ctx context.Context, id string, description *string) error
+
 	// CheckUserInvite verifies invite code is valid and unclaimed
 	CheckUserInvite(ctx context.Context, inviteCode string) (bool, error)
 	// ClaimUserInvite atomically verifies invite code and marks it as used
