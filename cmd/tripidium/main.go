@@ -197,10 +197,68 @@ func versionCMD(args []string) error {
 	return err
 }
 
+func inviteCMD(args []string) error {
+	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var code, description string
+	fs.StringVar(&code, "code", "", "invite code (required)")
+	fs.StringVar(&description, "description", "", "optional note stored with the invite")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("invite cmd got unexpected arguments: %v", fs.Args())
+	}
+
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return fmt.Errorf("invite requires -code")
+	}
+	if len(code) > 64 {
+		return fmt.Errorf("invite code must be at most 64 characters")
+	}
+
+	var descPtr *string
+	description = strings.TrimSpace(description)
+	if description != "" {
+		descPtr = &description
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %v", err)
+	}
+
+	database, err := db.CreateDatabase(
+		cfg.Database.Type,
+		cfg.Database.URI,
+		cfg.Database.MaxConns,
+		int64(cfg.Database.ConnMaxLifetime),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize database connection: %v", err)
+	}
+	defer database.Close()
+
+	if err := database.TestConnection(context.Background()); err != nil {
+		return fmt.Errorf("failed to test database connection: %v", err)
+	}
+
+	if err := database.CreateUserRegistrationInvite(context.Background(), code, descPtr); err != nil {
+		return fmt.Errorf("create invite: %w", err)
+	}
+
+	fmt.Println(code)
+	return nil
+}
+
 func usageCMD(w *os.File) {
 	fmt.Fprintln(w, "Usage: tripidium <command> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  invite    Create a user invite")
 	fmt.Fprintln(w, "  server    Run API server")
 	fmt.Fprintln(w, "  token     Generate token private key")
 	fmt.Fprintln(w, "  version   Print tripidium version")
@@ -213,6 +271,8 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
+	case "invite":
+		return inviteCMD(args[1:])
 	case "server":
 		return serverCMD(args[1:])
 	case "token":

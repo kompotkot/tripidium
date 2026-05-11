@@ -111,6 +111,10 @@ func (s *SqliteDB) DeactivateUser(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
+func (s *SqliteDB) CreateUserRegistrationInvite(ctx context.Context, id string, description *string) error {
+	return fmt.Errorf("sqlite: create user invite not supported")
+}
+
 func (s *SqliteDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
 	return false, nil
 }
