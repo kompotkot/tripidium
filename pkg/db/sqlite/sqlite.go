@@ -115,7 +115,7 @@ func (s *SqliteDB) CreateUserRegistrationInvite(ctx context.Context, id string, 
 	return fmt.Errorf("sqlite: create user invite not supported")
 }
 
-func (s *SqliteDB) CheckUserRegistrationInvite(ctx context.Context, inviteCode string) (bool, error) {
+func (s *SqliteDB) CheckUserInvite(ctx context.Context, inviteCode string) (bool, error) {
 	return false, nil
 }
 
